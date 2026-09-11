@@ -49,3 +49,12 @@ test("reuses task-bound Core only through Update Server", () => {
   assert.match(workflow, /Download task-bound Core from Update Server[\s\S]*scripts\/download\.mjs dependency/);
   assert.doesNotMatch(workflow, /actions\/download-artifact|Preserve Core binary/);
 });
+
+test("packages and extracts every Core artifact as ZIP", () => {
+  assert.match(workflow, /zip -q -j "\$GITHUB_WORKSPACE\/dist\/aioncore-\$\{\{ matrix\.target \}\}\.zip"/);
+  assert.match(workflow, /Compress-Archive[\s\S]*aioncore-\$\{\{ matrix\.target \}\}\.zip/);
+  assert.match(workflow, /ditto -x -k core-dependency core-input/);
+  assert.match(workflow, /unzip -q core-dependency -d core-input/);
+  assert.match(workflow, /Expand-Archive -Path core-dependency -DestinationPath core-input/);
+  assert.doesNotMatch(workflow, /aioncore-\$\{\{ matrix\.target \}\}\.tar\.gz|tar -xf core-dependency/);
+});

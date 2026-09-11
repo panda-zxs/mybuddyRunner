@@ -14,7 +14,7 @@
 
 手工触发 `.github/workflows/build.yml` 时只输入管理台创建的 `bt_...` 任务 ID。
 
-任务模式由 Update Server 决定：`core` 构建 `mybuddyCore`；`desktop` 构建 `mybuddy` 并使用任务绑定的已校验 Core 候选；`bundle` 先准备 Core，再将任务绑定的 Core 注入 Desktop。Update Server 按 Core commit 和目标平台保存 Core 构建缓存；命中缓存时即使选择了 Core，workflow 也跳过对应的 Rust 编译。Core 和 bundle 任务同时冻结并下载 GitLab `supermyba/mybuddyRS` 的 `v0.2.11` 源码，Cargo 通过本地 patch 使用它，不在构建期间从 GitHub 拉取 aionrs。
+任务模式由 Update Server 决定：`core` 构建 `mybuddyCore`；`desktop` 构建 `mybuddy` 并使用任务绑定的已校验 Core 候选；`bundle` 先准备 Core，再将任务绑定的 Core 注入 Desktop。所有平台的 Core 产物统一为 `aioncore-{target}.zip`。Update Server 按 Core commit 和目标平台保存 Core 构建缓存；命中缓存时即使选择了 Core，workflow 也跳过对应的 Rust 编译。Core 和 bundle 任务同时冻结并下载 GitLab `supermyba/mybuddyRS` 的 `v0.2.11` 源码，Cargo 通过本地 patch 使用它，不在构建期间从 GitHub 拉取 aionrs。
 
 支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`、`linux-x64`、`linux-arm64`。每个矩阵任务把制品直接上传到 Update Server 的任务暂存区。
 
