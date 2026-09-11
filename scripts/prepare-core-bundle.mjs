@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -13,7 +13,10 @@ const dataDirectory = path.join(root, ".prepare-data");
 await rm(root, { recursive: true, force: true });
 await mkdir(managedResources, { recursive: true });
 await mkdir(dataDirectory, { recursive: true });
-await copyFile(path.resolve(coreBinary), path.join(root, binaryName));
+const resolvedCoreBinary = path.resolve(coreBinary);
+if (process.platform !== "win32") await chmod(resolvedCoreBinary, 0o755);
+await copyFile(resolvedCoreBinary, path.join(root, binaryName));
+if (process.platform !== "win32") await chmod(path.join(root, binaryName), 0o755);
 
 // npm_config_* values used by electron-builder can make the managed Node/npm
 // validation behave as an Electron cross-build. Prepare Core resources in a
@@ -24,7 +27,7 @@ for (const key of Object.keys(env)) {
 }
 
 await new Promise((resolve, reject) => {
-  const child = spawn(path.resolve(coreBinary), [
+  const child = spawn(resolvedCoreBinary, [
     "--data-dir",
     dataDirectory,
     "prepare-managed-resources",
