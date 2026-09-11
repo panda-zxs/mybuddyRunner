@@ -4,11 +4,13 @@
 
 ## GitHub 配置
 
-仓库只需要配置一个 Actions Secret：
+在 GitHub Environment `MYBUDDY` 中配置三个 Environment secrets：
 
 - `MYBUDDY_BUILD_SECRET`：在 Update Server 管理台创建。明文只在创建响应中显示一次，可设置到期时间或永不过期。
+- `MYBUDDY_UPDATE_SERVER_URL`：Update Server 的 HTTPS 域名根地址，例如 `https://mybuddy.mingya.com.cn`，不附加 `/releases`、`/admin` 或渠道路径。
+- `MYBUDDY_UPDATE_PUBLIC_KEYS`：Desktop 内置的 Ed25519 公钥 JSON，格式为 `{"key-id":"-----BEGIN PUBLIC KEY-----\\n..."}`。
 
-另配置一个非敏感仓库变量 `MYBUDDY_UPDATE_SERVER_URL`，固定为 Update Server 的 HTTPS 根地址。工作流不接受可变服务器地址，避免构建密钥被发送到任意域名。
+四个 job 都显式绑定 `MYBUDDY` Environment。工作流不接受 dispatch 输入的服务器地址，避免构建密钥被发送到任意域名；公钥和按任务渠道生成的更新地址只注入 Desktop 打包步骤。
 
 手工触发 `.github/workflows/build.yml` 时只输入管理台创建的 `bt_...` 任务 ID。
 
