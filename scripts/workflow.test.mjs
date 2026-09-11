@@ -26,6 +26,9 @@ test("uses the MYBUDDY environment and injects public update trust only into des
 });
 
 test("extracts GitLab ZIP sources with platform-native tools", () => {
+  assert.match(workflow, /ditto -x -k core-source\.zip core-source/);
+  assert.match(workflow, /ditto -x -k aionrs-source\.zip aionrs-source/);
+  assert.match(workflow, /ditto -x -k desktop-source\.zip source/);
   assert.match(workflow, /unzip -q core-source\.zip -d core-source/);
   assert.match(workflow, /unzip -q aionrs-source\.zip -d aionrs-source/);
   assert.match(workflow, /unzip -q desktop-source\.zip -d source/);

@@ -65,8 +65,21 @@ jobs:
         run: node scripts/download.mjs source aionrs aionrs-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Extract source on Unix
-        if: runner.os != 'Windows'
+      - name: Extract source on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir core-source aionrs-source
+          ditto -x -k core-source.zip core-source
+          ditto -x -k aionrs-source.zip aionrs-source
+          SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
+          AIONRS_DIR=$(find aionrs-source -mindepth 1 -maxdepth 1 -type d | head -1)
+          test -n "$SOURCE_DIR"
+          test -n "$AIONRS_DIR"
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          echo "AIONRS_DIR=$AIONRS_DIR" >> "$GITHUB_ENV"
+      - name: Extract source on Linux
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           mkdir core-source aionrs-source
@@ -158,8 +171,17 @@ jobs:
         run: node scripts/download.mjs source desktop desktop-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Extract source on Unix
-        if: runner.os != 'Windows'
+      - name: Extract source on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir source
+          ditto -x -k desktop-source.zip source
+          SOURCE_DIR=$(find source -mindepth 1 -maxdepth 1 -type d | head -1)
+          test -n "$SOURCE_DIR"
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+      - name: Extract source on Linux
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           mkdir source
