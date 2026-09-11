@@ -2,6 +2,8 @@
 
 `mybuddyRunner` 是 MyBuddy 的 GitHub Actions 控制仓库。MyBuddy、MyBuddy Core、mybuddyRS 源码，任务计划、Core 依赖和构建制品全部通过 `mybuddyUpdateServer` 传输；工作流不保存 GitLab、OSS 地址或对应凭据。
 
+Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装依赖，避免 Bun 的 `node_modules/.bun/...` 与 NSIS 模板路径超过传统 260 字符上限。该处理同时用于 Desktop、Core 和 mybuddyRS 源码。
+
 ## GitHub 配置
 
 在 GitHub Environment `MYBUDDY` 中配置三个 Environment secrets：
