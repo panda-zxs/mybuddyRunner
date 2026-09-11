@@ -26,7 +26,23 @@ test("uses the MYBUDDY environment and injects public update trust only into des
 });
 
 test("extracts GitLab ZIP sources with platform-native tools", () => {
-  assert.equal((workflow.match(/unzip -q (?:core|desktop)-source\.zip -d source/g) || []).length, 2);
-  assert.equal((workflow.match(/Expand-Archive -Path (?:core|desktop)-source\.zip -DestinationPath source/g) || []).length, 2);
+  assert.match(workflow, /unzip -q core-source\.zip -d core-source/);
+  assert.match(workflow, /unzip -q aionrs-source\.zip -d aionrs-source/);
+  assert.match(workflow, /unzip -q desktop-source\.zip -d source/);
+  assert.match(workflow, /Expand-Archive -Path core-source\.zip -DestinationPath core-source/);
+  assert.match(workflow, /Expand-Archive -Path aionrs-source\.zip -DestinationPath aionrs-source/);
+  assert.match(workflow, /Expand-Archive -Path desktop-source\.zip -DestinationPath source/);
   assert.doesNotMatch(workflow, /tar -xf (?:core|desktop)-source\.zip/);
+});
+
+test("downloads frozen mybuddyRS and patches Cargo to the local source", () => {
+  assert.match(workflow, /Download frozen mybuddyRS source[\s\S]*scripts\/download\.mjs source aionrs/);
+  assert.match(workflow, /node scripts\/configure-aionrs\.mjs "\$SOURCE_DIR" "\$AIONRS_DIR"/);
+  assert.doesNotMatch(workflow, /git clone[\s\S]*aionrs/);
+});
+
+test("reuses task-bound Core only through Update Server", () => {
+  assert.match(workflow, /core_needed: \$\{\{ steps\.plan\.outputs\.core_needed \}\}/);
+  assert.match(workflow, /Download task-bound Core from Update Server[\s\S]*scripts\/download\.mjs dependency/);
+  assert.doesNotMatch(workflow, /actions\/download-artifact|Preserve Core binary/);
 });

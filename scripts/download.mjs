@@ -8,7 +8,7 @@ const taskId = process.env.TASK_ID || "";
 const secret = process.env.MYBUDDY_BUILD_SECRET || "";
 if (base.protocol !== "https:" || !/^bt_[a-f0-9]{24}$/.test(taskId) || !secret || !output) throw new Error("invalid download configuration");
 let path;
-if (kind === "source" && ["core", "desktop"].includes(name)) path = `/releases/ci/v1/tasks/${taskId}/sources/${name}/archive.zip`;
+if (kind === "source" && ["core", "desktop", "aionrs"].includes(name)) path = `/releases/ci/v1/tasks/${taskId}/sources/${name}/archive.zip`;
 else if (kind === "dependency" && /^[a-z]+-(?:arm64|x64)$/.test(name)) path = `/releases/ci/v1/tasks/${taskId}/dependencies/core/${name}`;
 else throw new Error("invalid download request");
 const response = await fetch(new URL(path, base), { headers: { Authorization: `Bearer ${secret}` }, redirect: "error" });

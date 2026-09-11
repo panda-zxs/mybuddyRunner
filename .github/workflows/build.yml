@@ -28,6 +28,7 @@ jobs:
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       channel: ${{ steps.plan.outputs.channel }}
+      core_needed: ${{ steps.plan.outputs.core_needed }}
       core_matrix: ${{ steps.plan.outputs.core_matrix }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
     steps:
@@ -46,7 +47,7 @@ jobs:
     needs: prepare
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
-    if: needs.prepare.outputs.mode == 'core' || needs.prepare.outputs.mode == 'bundle'
+    if: (needs.prepare.outputs.mode == 'core' || needs.prepare.outputs.mode == 'bundle') && needs.prepare.outputs.core_needed == 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.core_matrix) }}
@@ -60,23 +61,35 @@ jobs:
         run: node scripts/download.mjs source core core-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
+      - name: Download frozen mybuddyRS source
+        run: node scripts/download.mjs source aionrs aionrs-source.zip
+        env:
+          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Extract source on Unix
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          mkdir source
-          unzip -q core-source.zip -d source
-          SOURCE_DIR=$(find source -mindepth 1 -maxdepth 1 -type d | head -1)
+          mkdir core-source aionrs-source
+          unzip -q core-source.zip -d core-source
+          unzip -q aionrs-source.zip -d aionrs-source
+          SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
+          AIONRS_DIR=$(find aionrs-source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
+          test -n "$AIONRS_DIR"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          echo "AIONRS_DIR=$AIONRS_DIR" >> "$GITHUB_ENV"
       - name: Extract source on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Expand-Archive -Path core-source.zip -DestinationPath source
-          $sourceDir = Get-ChildItem source -Directory | Select-Object -First 1
+          Expand-Archive -Path core-source.zip -DestinationPath core-source
+          Expand-Archive -Path aionrs-source.zip -DestinationPath aionrs-source
+          $sourceDir = Get-ChildItem core-source -Directory | Select-Object -First 1
+          $aionrsDir = Get-ChildItem aionrs-source -Directory | Select-Object -First 1
           if (-not $sourceDir) { throw 'source archive has no root directory' }
-          "SOURCE_DIR=source/$($sourceDir.Name)" >> $env:GITHUB_ENV
+          if (-not $aionrsDir) { throw 'mybuddyRS source archive has no root directory' }
+          "SOURCE_DIR=$($sourceDir.FullName)" >> $env:GITHUB_ENV
+          "AIONRS_DIR=$($aionrsDir.FullName)" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.95.0"
@@ -93,10 +106,12 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags || '' }}
         run: |
+          node scripts/configure-aionrs.mjs "$SOURCE_DIR" "$AIONRS_DIR"
+          (cd "$SOURCE_DIR" && cargo update -p aion-agent -p aion-compact -p aion-config -p aion-mcp -p aion-memory -p aion-process -p aion-protocol -p aion-providers -p aion-skills -p aion-tools -p aion-types)
           if [ "${{ matrix.useCross || false }}" = true ]; then
             (cd "$SOURCE_DIR" && cross build --locked --release --target "${{ matrix.rustTarget }}" -p aionui-app)
           else
-            cargo build --manifest-path "$SOURCE_DIR/Cargo.toml" --locked --release --target "${{ matrix.rustTarget }}" -p aionui-app
+            (cd "$SOURCE_DIR" && cargo build --locked --release --target "${{ matrix.rustTarget }}" -p aionui-app)
           fi
       - name: Verify Core Linux GLIBC baseline
         if: runner.os == 'Linux'
@@ -117,14 +132,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive -Path "$env:SOURCE_DIR/target/${{ matrix.rustTarget }}/release/${{ matrix.binary }}" -DestinationPath "dist/aioncore-${{ matrix.target }}.zip" -Force
-      - name: Preserve Core binary for bundle build
-        if: needs.prepare.outputs.mode == 'bundle'
-        uses: actions/upload-artifact@v7
-        with:
-          name: core-${{ matrix.target }}
-          path: ${{ env.SOURCE_DIR }}/target/${{ matrix.rustTarget }}/release/${{ matrix.binary }}
-          if-no-files-found: error
-          retention-days: 1
       - name: Upload Core package to Update Server
         run: node scripts/upload.mjs core "${{ matrix.target }}" dist
         env:
@@ -135,7 +142,7 @@ jobs:
     needs: [prepare, core]
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
-    if: always() && (needs.prepare.outputs.mode == 'desktop' || (needs.prepare.outputs.mode == 'bundle' && needs.core.result == 'success'))
+    if: always() && (needs.prepare.outputs.mode == 'desktop' || (needs.prepare.outputs.mode == 'bundle' && (needs.core.result == 'success' || needs.prepare.outputs.core_needed == 'false')))
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.desktop_matrix) }}
@@ -168,27 +175,27 @@ jobs:
           $sourceDir = Get-ChildItem source -Directory | Select-Object -First 1
           if (-not $sourceDir) { throw 'source archive has no root directory' }
           "SOURCE_DIR=source/$($sourceDir.Name)" >> $env:GITHUB_ENV
-      - name: Download Core from this bundle build
-        if: needs.prepare.outputs.mode == 'bundle'
-        uses: actions/download-artifact@v8
-        with:
-          name: core-${{ matrix.target }}
-          path: core-input
-      - name: Download task-bound Core dependency
-        if: needs.prepare.outputs.mode == 'desktop'
+      - name: Download task-bound Core from Update Server
         run: node scripts/download.mjs dependency "${{ matrix.target }}" core-dependency
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Resolve local Core binary
+      - name: Extract Core on Unix
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          if [ "${{ needs.prepare.outputs.mode }}" = desktop ]; then
-            mkdir core-input
-            tar -xf core-dependency -C core-input
-          fi
+          mkdir core-input
+          tar -xf core-dependency -C core-input
           CORE_BINARY=$(find core-input -type f \( -name aioncore -o -name aioncore.exe \) | head -1)
           test -n "$CORE_BINARY"
           echo "CORE_BINARY=$(cd "$(dirname "$CORE_BINARY")" && pwd)/$(basename "$CORE_BINARY")" >> "$GITHUB_ENV"
+      - name: Extract Core on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive -Path core-dependency -DestinationPath core-input
+          $binary = Get-ChildItem core-input -Recurse -File | Where-Object { $_.Name -in @('aioncore', 'aioncore.exe') } | Select-Object -First 1
+          if (-not $binary) { throw 'Core package has no executable' }
+          "CORE_BINARY=$($binary.FullName)" >> $env:GITHUB_ENV
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y fakeroot rpm libnss3-dev libatk-bridge2.0-dev libdrm2 libxkbcommon-dev libxss1 libatspi2.0-dev libgtk-3-dev libxrandr2 libasound2-dev
@@ -243,9 +250,10 @@ jobs:
           CORE='${{ needs.core.result }}'
           DESKTOP='${{ needs.desktop.result }}'
           SUCCESS=false
-          if [ "$MODE" = core ] && [ "$CORE" = success ]; then SUCCESS=true; fi
+          CORE_NEEDED='${{ needs.prepare.outputs.core_needed }}'
+          if [ "$MODE" = core ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$MODE" = desktop ] && [ "$DESKTOP" = success ]; then SUCCESS=true; fi
-          if [ "$MODE" = bundle ] && [ "$CORE" = success ] && [ "$DESKTOP" = success ]; then SUCCESS=true; fi
+          if [ "$MODE" = bundle ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; } && [ "$DESKTOP" = success ]; then SUCCESS=true; fi
           node scripts/complete.mjs "$SUCCESS" "core=$CORE desktop=$DESKTOP"
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
