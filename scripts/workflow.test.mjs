@@ -52,9 +52,9 @@ test("reuses task-bound Core only through Update Server", () => {
 
 test("binds Desktop packaging to the Core tag selected by Update Server", () => {
   assert.match(workflow, /core_tag: \$\{\{ steps\.plan\.outputs\.core_tag \}\}/);
+  assert.match(workflow, /Prepare task-bound Core resources[\s\S]*prepare-core-bundle\.mjs/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
-  assert.match(desktopBuild, /AIONUI_BACKEND_LOCAL_BINARY_ONLY: "true"/);
-  assert.match(desktopBuild, /AIONUI_BACKEND_LOCAL_BINARY: \$\{\{ env\.CORE_BINARY \}\}/);
+  assert.match(desktopBuild, /AIONUI_BACKEND_LOCAL_BUNDLE_DIR: \$\{\{ github\.workspace \}\}\/core-bundle/);
   assert.match(desktopBuild, /AIONUI_BACKEND_VERSION: \$\{\{ needs\.prepare\.outputs\.core_tag \}\}/);
 });
 

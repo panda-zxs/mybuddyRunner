@@ -239,14 +239,15 @@ jobs:
         run: |
           cd "$SOURCE_DIR"
           bun install --frozen-lockfile
+      - name: Prepare task-bound Core resources
+        run: node scripts/prepare-core-bundle.mjs "$CORE_BINARY" "${{ matrix.binary }}" core-bundle
       - name: Build Desktop
         shell: bash
         run: cd "$SOURCE_DIR" && ${{ matrix.desktopCommand }}
         env:
           MYBUDDY_UPDATE_BASE_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}/releases/${{ needs.prepare.outputs.channel }}
           MYBUDDY_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_UPDATE_PUBLIC_KEYS }}
-          AIONUI_BACKEND_LOCAL_BINARY_ONLY: "true"
-          AIONUI_BACKEND_LOCAL_BINARY: ${{ env.CORE_BINARY }}
+          AIONUI_BACKEND_LOCAL_BUNDLE_DIR: ${{ github.workspace }}/core-bundle
           AIONUI_BACKEND_ARCH: ${{ matrix.arch }}
           AIONUI_BACKEND_VERSION: ${{ needs.prepare.outputs.core_tag }}
           NODE_OPTIONS: --max-old-space-size=8192
