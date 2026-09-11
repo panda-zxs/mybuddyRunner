@@ -21,7 +21,7 @@ function coreVersionAtLeastMinimum(tag) {
 }
 
 export function validatePlan(plan, expectedTaskId) {
-  if (!plan || plan.schemaVersion !== 1 || plan.taskId !== expectedTaskId || !["core", "desktop", "bundle"].includes(plan.mode) || !["stable", "beta", "internal"].includes(plan.channel)) throw new Error("invalid task plan");
+  if (!plan || ![1, 2].includes(plan.schemaVersion) || plan.taskId !== expectedTaskId || !["core", "desktop", "bundle"].includes(plan.mode) || !["stable", "beta", "internal"].includes(plan.channel)) throw new Error("invalid task plan");
   if (!Array.isArray(plan.targets) || plan.targets.length < 1 || new Set(plan.targets).size !== plan.targets.length || plan.targets.some((target) => !targetDefinitions[target])) throw new Error("invalid task targets");
   const cached = plan.coreCachedTargets || [];
   if (!Array.isArray(cached) || new Set(cached).size !== cached.length || cached.some((target) => !plan.targets.includes(target)) || plan.mode === "desktop" && cached.length) throw new Error("invalid cached Core targets");
@@ -35,6 +35,9 @@ export function validatePlan(plan, expectedTaskId) {
   if (plan.sources?.core && !coreVersionAtLeastMinimum(plan.sources.core.tag)) throw new Error("unsupported Core version");
   if (plan.mode === "desktop" && !/^[a-f0-9]{32}$/.test(plan.coreReleaseId || "")) throw new Error("desktop task requires a Core candidate");
   if (plan.mode !== "desktop" && plan.coreReleaseId) throw new Error("unexpected Core candidate");
+  if (plan.schemaVersion === 2 && plan.mode !== "core") {
+    if (!/^\d+\.\d+\.\d+$/.test(plan.uiVersion || "") || !/^\d+\.\d+\.\d+$/.test(plan.coreVersion || "") || !Number.isSafeInteger(plan.buildNumber) || plan.buildNumber < 1 || plan.applicationVersion !== `${plan.uiVersion}-build.${plan.buildNumber}`) throw new Error("invalid managed application version");
+  }
   return plan;
 }
 

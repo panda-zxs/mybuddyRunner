@@ -29,6 +29,7 @@ jobs:
       mode: ${{ steps.plan.outputs.mode }}
       channel: ${{ steps.plan.outputs.channel }}
       core_tag: ${{ steps.plan.outputs.core_tag }}
+      application_version: ${{ steps.plan.outputs.application_version }}
       core_needed: ${{ steps.plan.outputs.core_needed }}
       core_matrix: ${{ steps.plan.outputs.core_matrix }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
@@ -174,7 +175,9 @@ jobs:
         with: { bun-version: 1.3.5 }
       - uses: actions/setup-go@v6
         if: runner.os == 'macOS'
-        with: { go-version: '1.24' }
+        with:
+          go-version: '1.24'
+          cache: false
       - name: Download frozen Desktop source
         run: node scripts/download.mjs source desktop desktop-source.zip
         env:
@@ -245,6 +248,8 @@ jobs:
         run: |
           cd "$SOURCE_DIR"
           bun install --frozen-lockfile
+      - name: Apply task-managed MyBuddy version
+        run: node scripts/set-application-version.mjs "$SOURCE_DIR" "${{ needs.prepare.outputs.application_version }}"
       - name: Prepare task-bound Core resources
         run: node scripts/prepare-core-bundle.mjs "${{ matrix.binary }}" core-bundle
         env:

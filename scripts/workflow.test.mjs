@@ -61,6 +61,12 @@ test("binds Desktop packaging to the Core tag selected by Update Server", () => 
   assert.match(desktopBuild, /AIONUI_BACKEND_VERSION: \$\{\{ needs\.prepare\.outputs\.core_tag \}\}/);
 });
 
+test("applies the task-managed MyBuddy version and avoids the empty Go cache warning", () => {
+  assert.match(workflow, /application_version: \$\{\{ steps\.plan\.outputs\.application_version \}\}/);
+  assert.match(workflow, /Apply task-managed MyBuddy version[\s\S]*set-application-version\.mjs "\$SOURCE_DIR" "\$\{\{ needs\.prepare\.outputs\.application_version \}\}"/);
+  assert.match(workflow, /actions\/setup-go@v6[\s\S]*?go-version: '1\.24'\n\s+cache: false/);
+});
+
 test("packages and extracts every Core artifact as ZIP", () => {
   assert.match(workflow, /zip -q -j "\$GITHUB_WORKSPACE\/dist\/aioncore-\$\{\{ matrix\.target \}\}\.zip"/);
   assert.match(workflow, /Compress-Archive[\s\S]*aioncore-\$\{\{ matrix\.target \}\}\.zip/);

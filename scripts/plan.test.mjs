@@ -33,3 +33,8 @@ test("rejects a plan whose response bytes do not match the server digest", () =>
   assert.doesNotThrow(() => verifyPlanDigest(raw, digest));
   assert.throws(() => verifyPlanDigest(raw + " ", digest));
 });
+test("validates the task-managed MyBuddy build version", () => {
+  const plan = { schemaVersion: 2, taskId: id, mode: "bundle", channel: "stable", targets: ["darwin-arm64"], uiVersion: "1.0.0", coreVersion: "0.1.71", buildNumber: 2, applicationVersion: "1.0.0-build.2", sources: { core: { ...core, tag: "v0.1.71" }, aionrs, desktop: { repository: "desktop", tag: "v1.0.0", commit: "b".repeat(40) } } };
+  assert.doesNotThrow(() => validatePlan(plan, id));
+  assert.throws(() => validatePlan({ ...plan, applicationVersion: "1.0.0-build.3" }, id), /managed application version/);
+});
