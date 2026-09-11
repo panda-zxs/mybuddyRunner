@@ -27,6 +27,12 @@ test("omits cached Core targets from the build matrix", () => {
   const plan = validatePlan({ schemaVersion: 1, taskId: id, mode: "bundle", channel: "internal", targets: ["darwin-arm64", "windows-x64"], coreCachedTargets: ["darwin-arm64"], sources: { core, aionrs, desktop: { repository: "desktop", tag: "v2.1.60", commit: "b".repeat(40) } } }, id);
   assert.deepEqual(matrices(plan).core.include.map((item) => item.target), ["windows-x64"]);
 });
+test("omits completed Desktop targets from a retry matrix", () => {
+  const plan = validatePlan({ schemaVersion: 2, taskId: id, mode: "bundle", channel: "stable", targets: ["darwin-arm64", "windows-x64"], uiVersion: "1.0.0", coreVersion: "0.1.71", buildNumber: 1, applicationVersion: "1.0.0-build.1", coreCachedTargets: ["darwin-arm64", "windows-x64"], desktopCachedTargets: ["darwin-arm64"], sources: { core: { ...core, tag: "v0.1.71" }, aionrs, desktop: { repository: "desktop", tag: "v1.0.0", commit: "b".repeat(40) } } }, id);
+  const result = matrices(plan);
+  assert.deepEqual(result.core.include, []);
+  assert.deepEqual(result.desktop.include.map((item) => item.target), ["windows-x64"]);
+});
 test("rejects a plan whose response bytes do not match the server digest", () => {
   const raw = `{"schemaVersion":1,"taskId":"${id}"}`;
   const digest = createHash("sha256").update(raw).digest("hex");

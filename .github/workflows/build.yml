@@ -31,6 +31,7 @@ jobs:
       core_tag: ${{ steps.plan.outputs.core_tag }}
       application_version: ${{ steps.plan.outputs.application_version }}
       core_needed: ${{ steps.plan.outputs.core_needed }}
+      desktop_needed: ${{ steps.plan.outputs.desktop_needed }}
       core_matrix: ${{ steps.plan.outputs.core_matrix }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
     steps:
@@ -161,7 +162,7 @@ jobs:
     needs: [prepare, core]
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
-    if: always() && (needs.prepare.outputs.mode == 'desktop' || (needs.prepare.outputs.mode == 'bundle' && (needs.core.result == 'success' || needs.prepare.outputs.core_needed == 'false')))
+    if: always() && needs.prepare.outputs.desktop_needed == 'true' && (needs.prepare.outputs.mode == 'desktop' || (needs.prepare.outputs.mode == 'bundle' && (needs.core.result == 'success' || needs.prepare.outputs.core_needed == 'false')))
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.desktop_matrix) }}
@@ -300,9 +301,10 @@ jobs:
           DESKTOP='${{ needs.desktop.result }}'
           SUCCESS=false
           CORE_NEEDED='${{ needs.prepare.outputs.core_needed }}'
+          DESKTOP_NEEDED='${{ needs.prepare.outputs.desktop_needed }}'
           if [ "$MODE" = core ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; }; then SUCCESS=true; fi
-          if [ "$MODE" = desktop ] && [ "$DESKTOP" = success ]; then SUCCESS=true; fi
-          if [ "$MODE" = bundle ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; } && [ "$DESKTOP" = success ]; then SUCCESS=true; fi
+          if [ "$MODE" = desktop ] && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
+          if [ "$MODE" = bundle ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; } && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
           node scripts/complete.mjs "$SUCCESS" "core=$CORE desktop=$DESKTOP"
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}

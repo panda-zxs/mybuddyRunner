@@ -25,6 +25,8 @@ export function validatePlan(plan, expectedTaskId) {
   if (!Array.isArray(plan.targets) || plan.targets.length < 1 || new Set(plan.targets).size !== plan.targets.length || plan.targets.some((target) => !targetDefinitions[target])) throw new Error("invalid task targets");
   const cached = plan.coreCachedTargets || [];
   if (!Array.isArray(cached) || new Set(cached).size !== cached.length || cached.some((target) => !plan.targets.includes(target)) || plan.mode === "desktop" && cached.length) throw new Error("invalid cached Core targets");
+  const desktopCached = plan.desktopCachedTargets || [];
+  if (!Array.isArray(desktopCached) || new Set(desktopCached).size !== desktopCached.length || desktopCached.some((target) => !plan.targets.includes(target)) || plan.mode === "core" && desktopCached.length) throw new Error("invalid cached Desktop targets");
   const sourceNames = Object.keys(plan.sources || {}).sort();
   const expectedSources = plan.mode === "core" ? ["aionrs", "core"] : plan.mode === "desktop" ? ["desktop"] : ["aionrs", "core", "desktop"];
   if (JSON.stringify(sourceNames) !== JSON.stringify(expectedSources)) throw new Error("invalid task sources");
@@ -43,8 +45,9 @@ export function validatePlan(plan, expectedTaskId) {
 
 export function matrices(plan) {
   const cached = new Set(plan.coreCachedTargets || []);
+  const desktopCached = new Set(plan.desktopCachedTargets || []);
   const core = plan.targets.filter((target) => !cached.has(target)).map((target) => ({ target, ...targetDefinitions[target], os: targetDefinitions[target].coreOS }));
-  const desktop = plan.targets.map((target) => ({ target, ...targetDefinitions[target], os: targetDefinitions[target].desktopOS }));
+  const desktop = plan.targets.filter((target) => !desktopCached.has(target)).map((target) => ({ target, ...targetDefinitions[target], os: targetDefinitions[target].desktopOS }));
   return { core: { include: core }, desktop: { include: desktop } };
 }
 
