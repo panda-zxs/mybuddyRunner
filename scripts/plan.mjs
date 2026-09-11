@@ -9,6 +9,17 @@ const targetDefinitions = {
   "linux-arm64": { coreOS: "ubuntu-latest", desktopOS: "ubuntu-24.04-arm", rustTarget: "aarch64-unknown-linux-gnu", binary: "aioncore", platform: "linux", arch: "arm64", useCross: true, desktopCommand: "node scripts/build-with-builder.js arm64 --linux --arm64" }
 };
 
+const minimumCoreVersion = [0, 1, 71];
+function coreVersionAtLeastMinimum(tag) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag || "");
+  if (!match) return false;
+  const selected = match.slice(1).map(Number);
+  for (let index = 0; index < 3; index++) {
+    if (selected[index] !== minimumCoreVersion[index]) return selected[index] > minimumCoreVersion[index];
+  }
+  return true;
+}
+
 export function validatePlan(plan, expectedTaskId) {
   if (!plan || plan.schemaVersion !== 1 || plan.taskId !== expectedTaskId || !["core", "desktop", "bundle"].includes(plan.mode) || !["stable", "beta", "internal"].includes(plan.channel)) throw new Error("invalid task plan");
   if (!Array.isArray(plan.targets) || plan.targets.length < 1 || new Set(plan.targets).size !== plan.targets.length || plan.targets.some((target) => !targetDefinitions[target])) throw new Error("invalid task targets");
@@ -21,6 +32,7 @@ export function validatePlan(plan, expectedTaskId) {
     const source = plan.sources[name];
     if (source.repository !== name || !/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(source.tag) || !/^[a-f0-9]{40,64}$/.test(source.commit)) throw new Error("invalid source selection");
   }
+  if (plan.sources?.core && !coreVersionAtLeastMinimum(plan.sources.core.tag)) throw new Error("unsupported Core version");
   if (plan.mode === "desktop" && !/^[a-f0-9]{32}$/.test(plan.coreReleaseId || "")) throw new Error("desktop task requires a Core candidate");
   if (plan.mode !== "desktop" && plan.coreReleaseId) throw new Error("unexpected Core candidate");
   return plan;

@@ -50,6 +50,14 @@ test("reuses task-bound Core only through Update Server", () => {
   assert.doesNotMatch(workflow, /actions\/download-artifact|Preserve Core binary/);
 });
 
+test("binds Desktop packaging to the Core tag selected by Update Server", () => {
+  assert.match(workflow, /core_tag: \$\{\{ steps\.plan\.outputs\.core_tag \}\}/);
+  const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
+  assert.match(desktopBuild, /AIONUI_BACKEND_LOCAL_BINARY_ONLY: "true"/);
+  assert.match(desktopBuild, /AIONUI_BACKEND_LOCAL_BINARY: \$\{\{ env\.CORE_BINARY \}\}/);
+  assert.match(desktopBuild, /AIONUI_BACKEND_VERSION: \$\{\{ needs\.prepare\.outputs\.core_tag \}\}/);
+});
+
 test("packages and extracts every Core artifact as ZIP", () => {
   assert.match(workflow, /zip -q -j "\$GITHUB_WORKSPACE\/dist\/aioncore-\$\{\{ matrix\.target \}\}\.zip"/);
   assert.match(workflow, /Compress-Archive[\s\S]*aioncore-\$\{\{ matrix\.target \}\}\.zip/);

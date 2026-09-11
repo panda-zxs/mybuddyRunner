@@ -17,6 +17,12 @@ test("rejects arbitrary source and target input", () => {
   assert.throws(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["android"], sources: { core, aionrs } }, id));
   assert.throws(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["darwin-arm64"], sources: { core, desktop: core } }, id));
 });
+test("accepts Core v0.1.71 and newer and rejects older versions", () => {
+  for (const tag of ["v0.1.71", "v0.1.72", "v0.2.0", "v1.0.0"]) {
+    assert.doesNotThrow(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["darwin-arm64"], sources: { core: { ...core, tag }, aionrs } }, id));
+  }
+  assert.throws(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["darwin-arm64"], sources: { core: { ...core, tag: "v0.1.70" }, aionrs } }, id), /unsupported Core version/);
+});
 test("omits cached Core targets from the build matrix", () => {
   const plan = validatePlan({ schemaVersion: 1, taskId: id, mode: "bundle", channel: "internal", targets: ["darwin-arm64", "windows-x64"], coreCachedTargets: ["darwin-arm64"], sources: { core, aionrs, desktop: { repository: "desktop", tag: "v2.1.60", commit: "b".repeat(40) } } }, id);
   assert.deepEqual(matrices(plan).core.include.map((item) => item.target), ["windows-x64"]);
