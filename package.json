@@ -1,0 +1,6 @@
+{
+  "name": "mybuddy-runner",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test scripts/*.test.mjs" }
+}
