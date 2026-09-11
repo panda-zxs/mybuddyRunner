@@ -32,9 +32,12 @@ test("extracts GitLab ZIP sources with platform-native tools", () => {
   assert.match(workflow, /unzip -q core-source\.zip -d core-source/);
   assert.match(workflow, /unzip -q aionrs-source\.zip -d aionrs-source/);
   assert.match(workflow, /unzip -q desktop-source\.zip -d source/);
-  assert.match(workflow, /Expand-Archive -Path core-source\.zip -DestinationPath core-source/);
-  assert.match(workflow, /Expand-Archive -Path aionrs-source\.zip -DestinationPath aionrs-source/);
-  assert.match(workflow, /Expand-Archive -Path desktop-source\.zip -DestinationPath source/);
+  assert.match(workflow, /Expand-Archive -Path core-source\.zip -DestinationPath core-source-archive/);
+  assert.match(workflow, /Expand-Archive -Path aionrs-source\.zip -DestinationPath aionrs-source-archive/);
+  assert.match(workflow, /Expand-Archive -Path desktop-source\.zip -DestinationPath source-archive/);
+  assert.match(workflow, /Get-ChildItem -Force \$sourceDir\.FullName \| Move-Item -Destination core-src/);
+  assert.match(workflow, /Get-ChildItem -Force \$sourceDir\.FullName \| Move-Item -Destination src/);
+  assert.match(workflow, /SOURCE_DIR=\$\(\(Resolve-Path src\)\.Path\)/);
   assert.doesNotMatch(workflow, /tar -xf (?:core|desktop)-source\.zip/);
 });
 

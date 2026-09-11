@@ -96,14 +96,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Expand-Archive -Path core-source.zip -DestinationPath core-source
-          Expand-Archive -Path aionrs-source.zip -DestinationPath aionrs-source
-          $sourceDir = Get-ChildItem core-source -Directory | Select-Object -First 1
-          $aionrsDir = Get-ChildItem aionrs-source -Directory | Select-Object -First 1
+          Expand-Archive -Path core-source.zip -DestinationPath core-source-archive
+          Expand-Archive -Path aionrs-source.zip -DestinationPath aionrs-source-archive
+          $sourceDir = Get-ChildItem core-source-archive -Directory | Select-Object -First 1
+          $aionrsDir = Get-ChildItem aionrs-source-archive -Directory | Select-Object -First 1
           if (-not $sourceDir) { throw 'source archive has no root directory' }
           if (-not $aionrsDir) { throw 'mybuddyRS source archive has no root directory' }
-          "SOURCE_DIR=$($sourceDir.FullName)" >> $env:GITHUB_ENV
-          "AIONRS_DIR=$($aionrsDir.FullName)" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force core-src | Out-Null
+          New-Item -ItemType Directory -Force aionrs-src | Out-Null
+          Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination core-src
+          Get-ChildItem -Force $aionrsDir.FullName | Move-Item -Destination aionrs-src
+          "SOURCE_DIR=$((Resolve-Path core-src).Path)" >> $env:GITHUB_ENV
+          "AIONRS_DIR=$((Resolve-Path aionrs-src).Path)" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.95.0"
@@ -197,10 +201,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Expand-Archive -Path desktop-source.zip -DestinationPath source
-          $sourceDir = Get-ChildItem source -Directory | Select-Object -First 1
+          Expand-Archive -Path desktop-source.zip -DestinationPath source-archive
+          $sourceDir = Get-ChildItem source-archive -Directory | Select-Object -First 1
           if (-not $sourceDir) { throw 'source archive has no root directory' }
-          "SOURCE_DIR=source/$($sourceDir.Name)" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force src | Out-Null
+          Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination src
+          "SOURCE_DIR=$((Resolve-Path src).Path)" >> $env:GITHUB_ENV
       - name: Download task-bound Core from Update Server
         run: node scripts/download.mjs dependency "${{ matrix.target }}" core-dependency
         env:
