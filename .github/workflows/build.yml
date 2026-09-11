@@ -60,14 +60,23 @@ jobs:
         run: node scripts/download.mjs source core core-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Extract source
+      - name: Extract source on Unix
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir source
-          tar -xf core-source.zip -C source
+          unzip -q core-source.zip -d source
           SOURCE_DIR=$(find source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+      - name: Extract source on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive -Path core-source.zip -DestinationPath source
+          $sourceDir = Get-ChildItem source -Directory | Select-Object -First 1
+          if (-not $sourceDir) { throw 'source archive has no root directory' }
+          "SOURCE_DIR=source/$($sourceDir.Name)" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.95.0"
@@ -142,14 +151,23 @@ jobs:
         run: node scripts/download.mjs source desktop desktop-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Extract source
+      - name: Extract source on Unix
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir source
-          tar -xf desktop-source.zip -C source
+          unzip -q desktop-source.zip -d source
           SOURCE_DIR=$(find source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+      - name: Extract source on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive -Path desktop-source.zip -DestinationPath source
+          $sourceDir = Get-ChildItem source -Directory | Select-Object -First 1
+          if (-not $sourceDir) { throw 'source archive has no root directory' }
+          "SOURCE_DIR=source/$($sourceDir.Name)" >> $env:GITHUB_ENV
       - name: Download Core from this bundle build
         if: needs.prepare.outputs.mode == 'bundle'
         uses: actions/download-artifact@v8

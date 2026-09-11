@@ -24,3 +24,9 @@ test("uses the MYBUDDY environment and injects public update trust only into des
   assert.match(desktopBuild, /MYBUDDY_UPDATE_PUBLIC_KEYS: \$\{\{ secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS \}\}/);
   assert.equal((workflow.match(/secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS/g) || []).length, 1);
 });
+
+test("extracts GitLab ZIP sources with platform-native tools", () => {
+  assert.equal((workflow.match(/unzip -q (?:core|desktop)-source\.zip -d source/g) || []).length, 2);
+  assert.equal((workflow.match(/Expand-Archive -Path (?:core|desktop)-source\.zip -DestinationPath source/g) || []).length, 2);
+  assert.doesNotMatch(workflow, /tar -xf (?:core|desktop)-source\.zip/);
+});
