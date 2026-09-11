@@ -2,9 +2,10 @@ import { chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
-const [coreBinary, binaryName, outputDirectory = "core-bundle"] = process.argv.slice(2);
+const [binaryName, outputDirectory = "core-bundle"] = process.argv.slice(2);
+const coreBinary = process.env.TASK_CORE_BINARY;
 if (!coreBinary || !binaryName) {
-  throw new Error("usage: prepare-core-bundle.mjs <core-binary> <binary-name> [output-directory]");
+  throw new Error("TASK_CORE_BINARY and binary-name are required");
 }
 
 const root = path.resolve(outputDirectory);

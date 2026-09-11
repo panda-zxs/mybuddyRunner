@@ -240,7 +240,9 @@ jobs:
           cd "$SOURCE_DIR"
           bun install --frozen-lockfile
       - name: Prepare task-bound Core resources
-        run: node scripts/prepare-core-bundle.mjs "$CORE_BINARY" "${{ matrix.binary }}" core-bundle
+        run: node scripts/prepare-core-bundle.mjs "${{ matrix.binary }}" core-bundle
+        env:
+          TASK_CORE_BINARY: ${{ env.CORE_BINARY }}
       - name: Build Desktop
         shell: bash
         run: cd "$SOURCE_DIR" && ${{ matrix.desktopCommand }}
