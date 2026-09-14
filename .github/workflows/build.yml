@@ -248,7 +248,8 @@ jobs:
         shell: bash
         run: |
           cd "$SOURCE_DIR"
-          bun install --frozen-lockfile --os=${{ matrix.platform }} --cpu=${{ matrix.arch }}
+          bun install --frozen-lockfile
+          node "$GITHUB_WORKSPACE/scripts/install-target-codex.mjs" "$PWD" "${{ matrix.platform }}" "${{ matrix.arch }}"
       - name: Apply task-managed MyBuddy version
         shell: bash
         run: node scripts/set-application-version.mjs "$SOURCE_DIR" "${{ needs.prepare.outputs.application_version }}"
@@ -260,7 +261,7 @@ jobs:
         shell: bash
         run: cd "$SOURCE_DIR" && ${{ matrix.desktopCommand }}
         env:
-          MYBUDDY_UPDATE_BASE_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}/releases/${{ needs.prepare.outputs.channel }}
+          MYBUDDY_UPDATE_BASE_URL: ${{ matrix.platform != 'linux' && format('{0}/releases/{1}', secrets.MYBUDDY_UPDATE_SERVER_URL, needs.prepare.outputs.channel) || '' }}
           MYBUDDY_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_UPDATE_PUBLIC_KEYS }}
           AIONUI_BACKEND_LOCAL_BUNDLE_DIR: ${{ github.workspace }}/core-bundle
           AIONUI_BACKEND_ARCH: ${{ matrix.arch }}

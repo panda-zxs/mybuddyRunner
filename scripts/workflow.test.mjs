@@ -20,7 +20,7 @@ test("uses the MYBUDDY environment and injects public update trust only into des
   assert.equal((workflow.match(/environment: MYBUDDY/g) || []).length, 4);
   assert.match(workflow, /outputs:\n\s+mode:[\s\S]*?channel: \$\{\{ steps\.plan\.outputs\.channel \}\}/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
-  assert.match(desktopBuild, /MYBUDDY_UPDATE_BASE_URL: \$\{\{ secrets\.MYBUDDY_UPDATE_SERVER_URL \}\}\/releases\/\$\{\{ needs\.prepare\.outputs\.channel \}\}/);
+  assert.match(desktopBuild, /MYBUDDY_UPDATE_BASE_URL: \$\{\{ matrix\.platform != 'linux' && format\('\{0\}\/releases\/\{1\}', secrets\.MYBUDDY_UPDATE_SERVER_URL, needs\.prepare\.outputs\.channel\) \|\| '' \}\}/);
   assert.match(desktopBuild, /MYBUDDY_UPDATE_PUBLIC_KEYS: \$\{\{ secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS \}\}/);
   assert.equal((workflow.match(/secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS/g) || []).length, 1);
 });
@@ -65,6 +65,21 @@ test("applies the task-managed MyBuddy version and avoids the empty Go cache war
   assert.match(workflow, /application_version: \$\{\{ steps\.plan\.outputs\.application_version \}\}/);
   assert.match(workflow, /Apply task-managed MyBuddy version[\s\S]*set-application-version\.mjs "\$SOURCE_DIR" "\$\{\{ needs\.prepare\.outputs\.application_version \}\}"/);
   assert.match(workflow, /actions\/setup-go@v6[\s\S]*?go-version: '1\.24'\n\s+cache: false/);
+});
+
+test("preserves host build dependencies and supplements only the target Codex package", () => {
+  const installStep = workflow.slice(
+    workflow.indexOf("      - name: Install Desktop dependencies"),
+    workflow.indexOf("      - name: Apply task-managed MyBuddy version"),
+  );
+  assert.match(installStep, /bun install --frozen-lockfile\n/);
+  assert.match(installStep, /install-target-codex\.mjs" "\$PWD" "\$\{\{ matrix\.platform \}\}" "\$\{\{ matrix\.arch \}\}"/);
+  assert.doesNotMatch(installStep, /bun install[^\n]*--os=/);
+});
+
+test("disables the unsupported automatic update feed for Linux installers", () => {
+  const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
+  assert.match(desktopBuild, /matrix\.platform != 'linux'/);
 });
 
 test("packages and extracts every Core artifact as ZIP", () => {
