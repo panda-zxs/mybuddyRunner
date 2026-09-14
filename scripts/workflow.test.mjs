@@ -97,5 +97,6 @@ test("uses native stable Windows ARM64 tools and propagates install failure from
   assert.match(workflow, /architecture: \$\{\{ runner\.arch == 'ARM64' && 'arm64' \|\| 'x64' \}\}/);
   const install = workflow.slice(workflow.indexOf("      - name: Install Desktop dependencies on Windows"), workflow.indexOf("      - name: Apply task-managed MyBuddy version"));
   assert.match(install, /shell: pwsh/);
+  assert.match(install, /MYBUDDY_BUILD_BUN_EXECUTABLE=.*Get-Command bun -CommandType Application/);
   assert.match(install, /if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}/);
 });

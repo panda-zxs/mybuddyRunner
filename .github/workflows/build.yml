@@ -269,6 +269,7 @@ jobs:
         if: runner.os == 'Windows' && steps.packaged.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
+          "MYBUDDY_BUILD_BUN_EXECUTABLE=$((Get-Command bun -CommandType Application).Source)" >> $env:GITHUB_ENV
           Set-Location $env:SOURCE_DIR
           node -p "'Node architecture: ' + process.arch"
           bun -e "console.log('Bun architecture: ' + process.arch)"
