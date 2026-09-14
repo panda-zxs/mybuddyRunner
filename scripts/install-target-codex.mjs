@@ -89,8 +89,9 @@ export function ensureTargetCodexPackage(
       archiveToolPath(target.destination),
       "--strip-components=1",
     ];
-    if (process.platform === "win32") tarArguments.unshift("--force-local");
-    run("tar", tarArguments, { stdio: "inherit" });
+    // Native bsdtar understands drive letters; Git tar treats them as remote hosts.
+    const tar = process.platform === "win32" ? join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
+    run(tar, tarArguments, { stdio: "inherit" });
 
     const installed = readJson(installedMetadata);
     if (installed.name !== "@openai/codex" || installed.version !== target.expectedVersion) {

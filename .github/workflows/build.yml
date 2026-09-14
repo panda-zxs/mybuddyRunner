@@ -26,6 +26,8 @@ jobs:
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
     outputs:
+      source_commit: ${{ steps.plan.outputs.source_commit }}
+      core_commit: ${{ steps.plan.outputs.core_commit }}
       mode: ${{ steps.plan.outputs.mode }}
       channel: ${{ steps.plan.outputs.channel }}
       core_tag: ${{ steps.plan.outputs.core_tag }}
@@ -171,20 +173,31 @@ jobs:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - uses: actions/setup-node@v6
-        with: { node-version: 24 }
+        with:
+          node-version: 24
+          architecture: ${{ runner.os != 'Windows' && runner.arch == 'ARM64' && 'arm64' || 'x64' }}
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: 1.3.5 }
+        with:
+          bun-version: 1.3.5
+          bun-download-url: ${{ matrix.target == 'windows-arm64' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-windows-x64.zip' || '' }}
+      - name: Restore packaged Desktop files
+        id: packaged
+        uses: actions/cache/restore@v4
+        with:
+          path: desktop-dist
+          key: desktop-v1-${{ inputs.task_id }}-${{ matrix.target }}-${{ needs.prepare.outputs.source_commit }}-${{ needs.prepare.outputs.core_commit }}
       - uses: actions/setup-go@v6
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
         with:
           go-version: '1.24'
           cache: false
       - name: Download frozen Desktop source
+        if: steps.packaged.outputs.cache-hit != 'true'
         run: node scripts/download.mjs source desktop desktop-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Extract source on macOS
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir source
@@ -193,7 +206,7 @@ jobs:
           test -n "$SOURCE_DIR"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
       - name: Extract source on Linux
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir source
@@ -202,7 +215,7 @@ jobs:
           test -n "$SOURCE_DIR"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
       - name: Extract source on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.packaged.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Expand-Archive -Path desktop-source.zip -DestinationPath source-archive
@@ -212,11 +225,12 @@ jobs:
           Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination src
           "SOURCE_DIR=$((Resolve-Path src).Path)" >> $env:GITHUB_ENV
       - name: Download task-bound Core from Update Server
+        if: steps.packaged.outputs.cache-hit != 'true'
         run: node scripts/download.mjs dependency "${{ matrix.target }}" core-dependency
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Extract Core on macOS
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir core-input
@@ -225,7 +239,7 @@ jobs:
           test -n "$CORE_BINARY"
           echo "CORE_BINARY=$(cd "$(dirname "$CORE_BINARY")" && pwd)/$(basename "$CORE_BINARY")" >> "$GITHUB_ENV"
       - name: Extract Core on Linux
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir core-input
@@ -234,7 +248,7 @@ jobs:
           test -n "$CORE_BINARY"
           echo "CORE_BINARY=$(cd "$(dirname "$CORE_BINARY")" && pwd)/$(basename "$CORE_BINARY")" >> "$GITHUB_ENV"
       - name: Extract Core on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.packaged.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Expand-Archive -Path core-dependency -DestinationPath core-input
@@ -242,22 +256,26 @@ jobs:
           if (-not $binary) { throw 'Core package has no executable' }
           "CORE_BINARY=$($binary.FullName)" >> $env:GITHUB_ENV
       - name: Install Linux packaging dependencies
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
         run: sudo apt-get update && sudo apt-get install -y fakeroot rpm libnss3-dev libatk-bridge2.0-dev libdrm2 libxkbcommon-dev libxss1 libatspi2.0-dev libgtk-3-dev libxrandr2 libasound2-dev
       - name: Install Desktop dependencies
+        if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: |
           cd "$SOURCE_DIR"
           bun install --frozen-lockfile
           node "$GITHUB_WORKSPACE/scripts/install-target-codex.mjs" "$PWD" "${{ matrix.platform }}" "${{ matrix.arch }}"
       - name: Apply task-managed MyBuddy version
+        if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: node scripts/set-application-version.mjs "$SOURCE_DIR" "${{ needs.prepare.outputs.application_version }}"
       - name: Prepare task-bound Core resources
+        if: steps.packaged.outputs.cache-hit != 'true'
         run: node scripts/prepare-core-bundle.mjs "${{ matrix.binary }}" core-bundle
         env:
           TASK_CORE_BINARY: ${{ env.CORE_BINARY }}
       - name: Build Desktop
+        if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: cd "$SOURCE_DIR" && ${{ matrix.desktopCommand }}
         env:
@@ -272,11 +290,27 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           CI: "true"
       - name: Collect Desktop artifacts
+        if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir desktop-dist
           find "$SOURCE_DIR/out" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.msi' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.yml' -o -name '*.blockmap' \) -exec cp {} desktop-dist/ \;
           test -n "$(find desktop-dist -type f -maxdepth 1 -print -quit)"
+      - name: Reuse already uploaded task artifacts
+        if: steps.packaged.outputs.cache-hit != 'true'
+        run: node scripts/reuse-artifacts.mjs "${{ matrix.target }}" desktop-dist
+        env:
+          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
+      - name: Generate external Linux blockmaps
+        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
+        shell: bash
+        run: node scripts/prepare-blockmaps.mjs "$SOURCE_DIR" desktop-dist
+      - name: Save packaged Desktop files before upload
+        if: steps.packaged.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: desktop-dist
+          key: ${{ steps.packaged.outputs.cache-primary-key }}
       - name: Upload Desktop packages to Update Server
         run: node scripts/upload.mjs desktop "${{ matrix.target }}" desktop-dist
         env:

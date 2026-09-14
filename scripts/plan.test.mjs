@@ -33,11 +33,11 @@ test("omits completed Desktop targets from a retry matrix", () => {
   assert.deepEqual(result.core.include, []);
   assert.deepEqual(result.desktop.include.map((item) => item.target), ["windows-x64"]);
 });
-test("packages Windows ARM64 on the stable x64 Windows runner", () => {
+test("prepares Windows ARM64 Core on a native ARM64 Windows runner", () => {
   const plan = validatePlan({ schemaVersion: 2, taskId: id, mode: "bundle", channel: "stable", targets: ["windows-arm64"], uiVersion: "1.0.0", coreVersion: "0.1.71", buildNumber: 2, applicationVersion: "1.0.0-build.2", coreCachedTargets: ["windows-arm64"], sources: { core: { ...core, tag: "v0.1.71" }, aionrs, desktop: { repository: "desktop", tag: "v1.0.0", commit: "b".repeat(40) } } }, id);
   const [target] = matrices(plan).desktop.include;
   assert.equal(target.target, "windows-arm64");
-  assert.equal(target.os, "windows-2022");
+  assert.equal(target.os, "windows-11-arm");
   assert.equal(target.platform, "win32");
   assert.equal(target.arch, "arm64");
 });

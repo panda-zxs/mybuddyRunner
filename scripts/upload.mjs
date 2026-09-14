@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream, readdirSync, statSync } from "node:fs";
 import { basename } from "node:path";
+import { uploadWithRetry } from "./upload-retry.mjs";
 
 const [component, target, ...inputs] = process.argv.slice(2);
 const base = new URL(process.env.UPDATE_SERVER_URL || "");
@@ -16,6 +17,6 @@ for (const file of files) {
   for await (const chunk of createReadStream(file)) hash.update(chunk);
   const digest = hash.digest("hex");
   const filename = basename(file);
-  const response = await fetch(new URL(`/releases/ci/v1/tasks/${taskId}/artifacts/${component}/${target}/${encodeURIComponent(filename)}`, base), { method: "PUT", headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/octet-stream", "Content-Length": String(size), "X-Content-SHA256": digest }, body: createReadStream(file), duplex: "half", redirect: "error" });
-  if (!response.ok) throw new Error(`artifact upload failed for ${filename} (${response.status})`);
+  await uploadWithRetry(async () => fetch(new URL(`/releases/ci/v1/tasks/${taskId}/artifacts/${component}/${target}/${encodeURIComponent(filename)}`, base), { method: "PUT", headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/octet-stream", "Content-Length": String(size), "X-Content-SHA256": digest }, body: createReadStream(file), duplex: "half", redirect: "error" }), filename);
+  console.log(`Uploaded ${filename}`);
 }

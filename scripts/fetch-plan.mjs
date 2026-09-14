@@ -13,4 +13,4 @@ verifyPlanDigest(rawPlan, response.headers.get("x-mybuddy-plan-sha256"));
 const plan = validatePlan(JSON.parse(rawPlan), taskId);
 const result = matrices(plan);
 writeFileSync("task-plan.json", JSON.stringify(plan, null, 2) + "\n", { mode: 0o600 });
-appendFileSync(process.env.GITHUB_OUTPUT, `mode=${plan.mode}\nchannel=${plan.channel}\ncore_tag=${plan.sources.core?.tag || ""}\napplication_version=${plan.applicationVersion || ""}\ncore_needed=${result.core.include.length > 0}\ndesktop_needed=${result.desktop.include.length > 0}\ncore_matrix=${JSON.stringify(result.core)}\ndesktop_matrix=${JSON.stringify(result.desktop)}\n`);
+appendFileSync(process.env.GITHUB_OUTPUT, `source_commit=${plan.sources.desktop?.commit || ""}\ncore_commit=${plan.sources.core?.commit || plan.coreReleaseId || ""}\nmode=${plan.mode}\nchannel=${plan.channel}\ncore_tag=${plan.sources.core?.tag || ""}\napplication_version=${plan.applicationVersion || ""}\ncore_needed=${result.core.include.length > 0}\ndesktop_needed=${result.desktop.include.length > 0}\ncore_matrix=${JSON.stringify(result.core)}\ndesktop_matrix=${JSON.stringify(result.desktop)}\n`);

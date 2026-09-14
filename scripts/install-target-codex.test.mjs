@@ -44,5 +44,6 @@ test("uses a Windows command shell only when invoking npm.cmd", async () => {
     readFileSync(new URL("./install-target-codex.mjs", import.meta.url), "utf8"),
   );
   assert.match(source, /shell: process\.platform === "win32"/);
-  assert.match(source, /process\.platform === "win32"\) tarArguments\.unshift\("--force-local"\)/);
+  assert.match(source, /"System32", "tar.exe"/);
+  assert.doesNotMatch(source, /--force-local/);
 });

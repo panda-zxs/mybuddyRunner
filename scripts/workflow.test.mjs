@@ -18,7 +18,7 @@ test("does not accept a dispatch-provided server URL", () => {
 
 test("uses the MYBUDDY environment and injects public update trust only into desktop packaging", () => {
   assert.equal((workflow.match(/environment: MYBUDDY/g) || []).length, 4);
-  assert.match(workflow, /outputs:\n\s+mode:[\s\S]*?channel: \$\{\{ steps\.plan\.outputs\.channel \}\}/);
+  assert.match(workflow, /outputs:\n[\s\S]*?mode:[\s\S]*?channel: \$\{\{ steps\.plan\.outputs\.channel \}\}/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
   assert.match(desktopBuild, /MYBUDDY_UPDATE_BASE_URL: \$\{\{ matrix\.platform != 'linux' && format\('\{0\}\/releases\/\{1\}', secrets\.MYBUDDY_UPDATE_SERVER_URL, needs\.prepare\.outputs\.channel\) \|\| '' \}\}/);
   assert.match(desktopBuild, /MYBUDDY_UPDATE_PUBLIC_KEYS: \$\{\{ secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS \}\}/);
