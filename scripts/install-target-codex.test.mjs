@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { targetCodexPackage } from "./install-target-codex.mjs";
+import { archiveToolPath, targetCodexPackage } from "./install-target-codex.mjs";
 
 test("resolves the aliased target package and exact native version", () => {
   const root = mkdtempSync(join(tmpdir(), "target-codex-test-"));
@@ -32,6 +32,11 @@ test("resolves the aliased target package and exact native version", () => {
 
 test("rejects targets that are not part of the managed platform matrix", () => {
   assert.throws(() => targetCodexPackage(".", "freebsd", "x64"), /unsupported Codex target/);
+});
+
+test("normalizes Windows paths for Git tar without changing Unix paths", () => {
+  assert.equal(archiveToolPath("D:\\a\\src\\package.tgz", "win32"), "D:/a/src/package.tgz");
+  assert.equal(archiveToolPath("/tmp/package.tgz", "linux"), "/tmp/package.tgz");
 });
 
 test("uses a Windows command shell only when invoking npm.cmd", async () => {

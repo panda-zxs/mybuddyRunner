@@ -17,6 +17,10 @@ function readJson(filename) {
   return JSON.parse(readFileSync(filename, "utf8"));
 }
 
+export function archiveToolPath(filename, platform = process.platform) {
+  return platform === "win32" ? filename.replaceAll("\\", "/") : filename;
+}
+
 export function targetCodexPackage(projectRoot, platform, arch) {
   if (!supportedPlatforms.has(platform) || !supportedArchitectures.has(arch)) {
     throw new Error(`unsupported Codex target: ${platform}-${arch}`);
@@ -80,9 +84,9 @@ export function ensureTargetCodexPackage(
     mkdirSync(target.destination, { recursive: true });
     const tarArguments = [
       "-xzf",
-      join(temporaryDirectory, filename),
+      archiveToolPath(join(temporaryDirectory, filename)),
       "-C",
-      target.destination,
+      archiveToolPath(target.destination),
       "--strip-components=1",
     ];
     if (process.platform === "win32") tarArguments.unshift("--force-local");
