@@ -33,3 +33,10 @@ test("resolves the aliased target package and exact native version", () => {
 test("rejects targets that are not part of the managed platform matrix", () => {
   assert.throws(() => targetCodexPackage(".", "freebsd", "x64"), /unsupported Codex target/);
 });
+
+test("uses a Windows command shell only when invoking npm.cmd", async () => {
+  const source = await import("node:fs").then(({ readFileSync }) =>
+    readFileSync(new URL("./install-target-codex.mjs", import.meta.url), "utf8"),
+  );
+  assert.match(source, /shell: process\.platform === "win32"/);
+});

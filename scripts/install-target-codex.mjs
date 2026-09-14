@@ -65,7 +65,11 @@ export function ensureTargetCodexPackage(
     const packed = run(
       npmExecutable,
       ["pack", "--json", "--ignore-scripts", "--pack-destination", temporaryDirectory, target.packageSpec],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+      {
+        encoding: "utf8",
+        shell: process.platform === "win32",
+        stdio: ["ignore", "pipe", "inherit"],
+      },
     );
     const packResult = JSON.parse(packed);
     const filename = packResult?.[0]?.filename;
