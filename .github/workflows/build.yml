@@ -248,7 +248,7 @@ jobs:
         shell: bash
         run: |
           cd "$SOURCE_DIR"
-          bun install --frozen-lockfile
+          bun install --frozen-lockfile --os=${{ matrix.platform }} --cpu=${{ matrix.arch }}
       - name: Apply task-managed MyBuddy version
         shell: bash
         run: node scripts/set-application-version.mjs "$SOURCE_DIR" "${{ needs.prepare.outputs.application_version }}"
