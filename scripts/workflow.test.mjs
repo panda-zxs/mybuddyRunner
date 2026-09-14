@@ -90,3 +90,12 @@ test("packages and extracts every Core artifact as ZIP", () => {
   assert.match(workflow, /Expand-Archive -Path core-dependency -DestinationPath core-input/);
   assert.doesNotMatch(workflow, /aioncore-\$\{\{ matrix\.target \}\}\.tar\.gz|tar -xf core-dependency/);
 });
+
+
+test("uses native stable Windows ARM64 tools and propagates install failure from PowerShell", () => {
+  assert.match(workflow, /bun-v1\.4\.2\/bun-windows-aarch64\.zip/);
+  assert.match(workflow, /architecture: \$\{\{ runner\.arch == 'ARM64' && 'arm64' \|\| 'x64' \}\}/);
+  const install = workflow.slice(workflow.indexOf("      - name: Install Desktop dependencies on Windows"), workflow.indexOf("      - name: Apply task-managed MyBuddy version"));
+  assert.match(install, /shell: pwsh/);
+  assert.match(install, /if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}/);
+});
