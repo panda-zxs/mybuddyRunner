@@ -47,9 +47,49 @@ jobs:
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
 
-  core:
+  verify-core:
     environment: MYBUDDY
     needs: prepare
+    if: (needs.prepare.outputs.mode == 'core' || needs.prepare.outputs.mode == 'bundle') && needs.prepare.outputs.core_needed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v6
+        with: { node-version: 24 }
+      - name: Download frozen Core source for verification
+        run: node scripts/download.mjs source core core-source.zip
+        env:
+          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
+      - name: Extract Core verification source
+        shell: bash
+        run: |
+          mkdir core-source
+          unzip -q core-source.zip -d core-source
+          SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
+          test -n "$SOURCE_DIR"
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95.0"
+          components: rustfmt, clippy
+      - name: Verify Core formatting, lint and workspace tests
+        shell: bash
+        run: |
+          cd "$SOURCE_DIR"
+          cargo fmt --all -- --check
+          cargo clippy --workspace --locked -- -D warnings
+          cargo test --workspace --locked
+
+  core:
+    environment: MYBUDDY
+    needs: [prepare, verify-core]
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
     if: (needs.prepare.outputs.mode == 'core' || needs.prepare.outputs.mode == 'bundle') && needs.prepare.outputs.core_needed == 'true'
@@ -309,7 +349,7 @@ jobs:
 
   complete:
     environment: MYBUDDY
-    needs: [prepare, core, desktop]
+    needs: [prepare, verify-core, core, desktop]
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
     if: always()
@@ -323,6 +363,7 @@ jobs:
         shell: bash
         run: |
           MODE='${{ needs.prepare.outputs.mode }}'
+          VERIFY='${{ needs.verify-core.result }}'
           CORE='${{ needs.core.result }}'
           DESKTOP='${{ needs.desktop.result }}'
           SUCCESS=false
@@ -331,6 +372,7 @@ jobs:
           if [ "$MODE" = core ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$MODE" = desktop ] && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$MODE" = bundle ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; } && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
-          node scripts/complete.mjs "$SUCCESS" "core=$CORE desktop=$DESKTOP"
+          if [ "$VERIFY" = failure ] || [ "$VERIFY" = cancelled ]; then SUCCESS=false; fi
+          node scripts/complete.mjs "$SUCCESS" "verify=$VERIFY core=$CORE desktop=$DESKTOP"
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}

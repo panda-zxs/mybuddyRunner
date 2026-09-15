@@ -12,7 +12,7 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 - `MYBUDDY_UPDATE_SERVER_URL`：Update Server 的 HTTPS 域名根地址，例如 `https://mybuddy.mingya.com.cn`，不附加 `/releases`、`/admin` 或渠道路径。
 - `MYBUDDY_UPDATE_PUBLIC_KEYS`：Desktop 内置的 Ed25519 公钥 JSON，格式为 `{"key-id":"-----BEGIN PUBLIC KEY-----\\n..."}`。
 
-四个 job 都显式绑定 `MYBUDDY` Environment。工作流不接受 dispatch 输入的服务器地址，避免构建密钥被发送到任意域名；公钥和按任务渠道生成的更新地址只注入 Desktop 打包步骤。
+五个 job 都显式绑定 `MYBUDDY` Environment。工作流不接受 dispatch 输入的服务器地址，避免构建密钥被发送到任意域名；公钥和按任务渠道生成的更新地址只注入 Desktop 打包步骤。
 
 手工触发 `.github/workflows/build.yml` 时只输入管理台创建的 `bt_...` 任务 ID。
 
@@ -27,3 +27,5 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 ```bash
 npm test
 ```
+
+Core 的格式、Clippy 和工作区测试由 `verify-core` job 执行，通过后才运行各平台发布构建。开发机不执行 Rust 编译或测试；正式构建任务均从 Update Server 创建和派发。

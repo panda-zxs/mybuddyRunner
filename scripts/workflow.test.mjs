@@ -8,16 +8,16 @@ test("keeps the build secret out of job-wide and business-source environments", 
   const beforeJobs = workflow.slice(0, workflow.indexOf("\njobs:"));
   assert.doesNotMatch(beforeJobs, /MYBUDDY_BUILD_SECRET/);
   assert.match(workflow, /Fetch and validate immutable task plan[\s\S]*?env:\n\s+MYBUDDY_BUILD_SECRET:/);
-  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 4);
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 5);
 });
 
 test("does not accept a dispatch-provided server URL", () => {
   assert.doesNotMatch(workflow, /inputs:\n[\s\S]*update_server_url:/);
-  assert.equal((workflow.match(/UPDATE_SERVER_URL: \$\{\{ secrets\.MYBUDDY_UPDATE_SERVER_URL \}\}/g) || []).length, 4);
+  assert.equal((workflow.match(/UPDATE_SERVER_URL: \$\{\{ secrets\.MYBUDDY_UPDATE_SERVER_URL \}\}/g) || []).length, 5);
 });
 
 test("uses the MYBUDDY environment and injects public update trust only into desktop packaging", () => {
-  assert.equal((workflow.match(/environment: MYBUDDY/g) || []).length, 4);
+  assert.equal((workflow.match(/environment: MYBUDDY/g) || []).length, 5);
   assert.match(workflow, /outputs:\n[\s\S]*?mode:[\s\S]*?channel: \$\{\{ steps\.plan\.outputs\.channel \}\}/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
   assert.match(desktopBuild, /MYBUDDY_UPDATE_BASE_URL: \$\{\{ matrix\.platform != 'linux' && format\('\{0\}\/releases\/\{1\}', secrets\.MYBUDDY_UPDATE_SERVER_URL, needs\.prepare\.outputs\.channel\) \|\| '' \}\}/);
@@ -95,4 +95,11 @@ test("uses native stable Windows ARM64 tools and propagates install failure from
   assert.match(install, /shell: pwsh/);
   assert.match(install, /MYBUDDY_BUILD_BUN_EXECUTABLE=.*Get-Command bun -CommandType Application/);
   assert.match(install, /if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}/);
+});
+
+
+test("verifies frozen Core source in Actions before building release artifacts", () => {
+  assert.match(workflow, /core:\n    environment: MYBUDDY\n    needs: \[prepare, verify-core\]/);
+  assert.match(workflow, /cargo fmt --all -- --check\n\s+cargo clippy --workspace --locked -- -D warnings\n\s+cargo test --workspace --locked/);
+  assert.match(workflow, /needs: \[prepare, verify-core, core, desktop\]/);
 });
