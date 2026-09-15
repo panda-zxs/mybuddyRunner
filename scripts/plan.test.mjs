@@ -55,3 +55,13 @@ test("validates managed application version and immutable plan digest", () => {
   assert.doesNotThrow(() => verifyPlanDigest(raw, digest));
   assert.throws(() => verifyPlanDigest(raw + " ", digest), /task plan digest mismatch/);
 });
+
+test('platform pipelines isolate Core and Desktop cache decisions per target', () => {
+  const result = matrices({ mode: 'bundle', targets: ['darwin-arm64', 'windows-x64'], coreCachedTargets: ['darwin-arm64'], desktopCachedTargets: ['windows-x64'] });
+  assert.deepEqual(result.platforms.include.map(({ target, core_needed, desktop_needed }) => ({ target, core_needed, desktop_needed })), [
+    { target: 'darwin-arm64', core_needed: false, desktop_needed: true },
+    { target: 'windows-x64', core_needed: true, desktop_needed: false },
+  ]);
+  assert.equal(matrices({ mode: 'desktop', targets: ['windows-x64'] }).platforms.include[0].core_needed, false);
+  assert.equal(matrices({ mode: 'core', targets: ['windows-x64'] }).platforms.include[0].desktop_needed, false);
+});

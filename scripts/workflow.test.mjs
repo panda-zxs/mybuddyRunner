@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const workflow = readFileSync(new URL("../.github/workflows/build.yml", import.meta.url), "utf8");
+const mainWorkflow = readFileSync(new URL("../.github/workflows/build.yml", import.meta.url), "utf8");
+const platformWorkflow = readFileSync(new URL("../.github/workflows/platform.yml", import.meta.url), "utf8");
+const workflow = mainWorkflow + "\n" + platformWorkflow;
+
 
 test("keeps the build secret out of job-wide and business-source environments", () => {
   const beforeJobs = workflow.slice(0, workflow.indexOf("\njobs:"));
@@ -20,9 +23,9 @@ test("uses the MYBUDDY environment and injects public update trust only into des
   assert.equal((workflow.match(/environment: MYBUDDY/g) || []).length, 5);
   assert.match(workflow, /outputs:\n[\s\S]*?mode:[\s\S]*?channel: \$\{\{ steps\.plan\.outputs\.channel \}\}/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
-  assert.match(desktopBuild, /MYBUDDY_UPDATE_BASE_URL: \$\{\{ matrix\.platform != 'linux' && format\('\{0\}\/releases\/\{1\}', secrets\.MYBUDDY_UPDATE_SERVER_URL, needs\.prepare\.outputs\.channel\) \|\| '' \}\}/);
+  assert.match(desktopBuild, /MYBUDDY_UPDATE_BASE_URL: \$\{\{ matrix\.platform != 'linux' && format\('\{0\}\/releases\/\{1\}', secrets\.MYBUDDY_UPDATE_SERVER_URL, inputs\.channel\) \|\| '' \}\}/);
   assert.match(desktopBuild, /MYBUDDY_UPDATE_PUBLIC_KEYS: \$\{\{ secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS \}\}/);
-  assert.equal((workflow.match(/secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS/g) || []).length, 1);
+  assert.equal((workflow.match(/secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS/g) || []).length, 2);
 });
 
 test("extracts GitLab ZIP sources with platform-native tools", () => {
@@ -54,12 +57,12 @@ test("binds Desktop packaging to the Core tag selected by Update Server", () => 
   assert.match(workflow, /Prepare task-bound Core resources[\s\S]*prepare-core-bundle\.mjs/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
   assert.match(desktopBuild, /MYBUDDY_BACKEND_LOCAL_BUNDLE_DIR: \$\{\{ github\.workspace \}\}\/core-bundle/);
-  assert.match(desktopBuild, /MYBUDDY_BACKEND_VERSION: \$\{\{ needs\.prepare\.outputs\.core_tag \}\}/);
+  assert.match(desktopBuild, /MYBUDDY_BACKEND_VERSION: \$\{\{ inputs\.core_tag \}\}/);
 });
 
 test("applies the task-managed MyBuddy version and avoids the empty Go cache warning", () => {
   assert.match(workflow, /application_version: \$\{\{ steps\.plan\.outputs\.application_version \}\}/);
-  assert.match(workflow, /Apply task-managed MyBuddy version[\s\S]*set-application-version\.mjs "\$SOURCE_DIR" "\$\{\{ needs\.prepare\.outputs\.application_version \}\}"/);
+  assert.match(workflow, /Apply task-managed MyBuddy version[\s\S]*set-application-version\.mjs "\$SOURCE_DIR" "\$\{\{ inputs\.application_version \}\}"/);
   assert.match(workflow, /actions\/setup-go@v6[\s\S]*?go-version: '1\.24'\n\s+cache: false/);
 });
 
@@ -99,16 +102,20 @@ test("uses native stable Windows ARM64 tools and propagates install failure from
 
 
 test("verifies frozen Core source in Actions before building release artifacts", () => {
-  assert.match(workflow, /core:\n    environment: MYBUDDY\n    needs: \[prepare, verify-core\]/);
-  assert.match(workflow, /cargo fmt --all -- --check\n\s+cargo clippy --workspace --locked -- -D warnings\n\s+cargo test --workspace --locked/);
-  assert.match(workflow, /needs: \[prepare, verify-core, core, desktop\]/);
+  assert.match(mainWorkflow, /platforms:\n    needs: \[prepare, verify-core\]/);
+  assert.match(platformWorkflow, /needs: core/);
+  const verifier = readFileSync(new URL("./verify-core.sh", import.meta.url), "utf8");
+  assert.match(verifier, /cargo fmt --all -- --check/);
+  assert.match(verifier, /cargo clippy --workspace --locked -- -D warnings/);
+  assert.match(verifier, /cargo test --workspace --locked/);
+  assert.match(workflow, /needs: \[prepare, verify-core, platforms\]/);
 });
 
 test("reuses verification only for an exact source and verification contract", () => {
-  const verify = workflow.slice(workflow.indexOf("\n  verify-core:"), workflow.indexOf("\n  core:"));
+  const verify = mainWorkflow.slice(mainWorkflow.indexOf("\n  verify-core:"), mainWorkflow.indexOf("\n  platforms:"));
   const restore = verify.slice(verify.indexOf("      - name: Restore successful"), verify.indexOf("      - name: Download frozen"));
   assert.match(restore, /actions\/cache\/restore@v4/);
-  assert.match(restore, /runner\.os.*runner\.arch.*rust1\.95\.0.*needs\.prepare\.outputs\.core_commit.*hashFiles\('\.github\/workflows\/build\.yml'\)/);
+  assert.match(restore, /runner\.os.*runner\.arch.*steps\.config\.outputs\.toolchain.*needs\.prepare\.outputs\.core_commit.*hashFiles\('scripts\/verify-core\.sh', 'scripts\/core-verification\.json'/);
   assert.doesNotMatch(restore, /restore-keys:|lookup-only:/);
   for (const name of ["Download frozen Core source for verification", "Extract Core verification source", "Cache Core verification dependencies", "Verify Core formatting, lint and workspace tests"]) {
     assert.ok(verify.includes(`- name: ${name}\n        if: steps.verified.outputs.cache-hit != 'true'`));
@@ -117,5 +124,17 @@ test("reuses verification only for an exact source and verification contract", (
   assert.equal((save.match(/if: success\(\) && steps\.verified\.outputs\.cache-hit != 'true'/g) || []).length, 2);
   assert.match(save, /key: \$\{\{ steps\.verified\.outputs\.cache-primary-key \}\}/);
   assert.doesNotMatch(verify, /continue-on-error:/);
-  assert.ok(verify.indexOf("cargo test --workspace --locked") < verify.indexOf("      - name: Record successful"));
+  assert.ok(verify.indexOf("run: bash scripts/verify-core.sh") < verify.indexOf("      - name: Record successful"));
+});
+
+test("platform jobs preserve exact package caches and per-platform dependencies", () => {
+  assert.match(mainWorkflow, /uses: \.\/\.github\/workflows\/platform.yml/);
+  assert.match(platformWorkflow, /if: inputs.core_needed/);
+  assert.match(platformWorkflow, /if: always\(\) && !cancelled\(\) && inputs.desktop_needed && \(needs.core.result == 'success' \|\| !inputs.core_needed\)/);
+  const core = platformWorkflow.slice(platformWorkflow.indexOf('\n  core:'), platformWorkflow.indexOf('\n  desktop:'));
+  assert.ok(core.indexOf('Verify Core Linux GLIBC baseline') < core.indexOf('Save packaged Core files before upload'));
+  assert.ok(core.indexOf('Save packaged Core files before upload') < core.indexOf('Upload Core package to Update Server'));
+  assert.match(core, /core-package-v1-.*inputs.core_commit.*hashFiles/);
+  assert.match(platformWorkflow, /key: desktop-v2-.*inputs.source_commit.*inputs.core_commit.*hashFiles.*steps.update-config.outputs.digest/);
+  assert.ok(platformWorkflow.indexOf('Restore packaged Desktop files') < platformWorkflow.indexOf('oven-sh/setup-bun'));
 });

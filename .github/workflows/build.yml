@@ -36,6 +36,7 @@ jobs:
       desktop_needed: ${{ steps.plan.outputs.desktop_needed }}
       core_matrix: ${{ steps.plan.outputs.core_matrix }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
+      platform_matrix: ${{ steps.plan.outputs.platform_matrix }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
@@ -51,25 +52,33 @@ jobs:
     environment: MYBUDDY
     needs: prepare
     if: (needs.prepare.outputs.mode == 'core' || needs.prepare.outputs.mode == 'bundle') && needs.prepare.outputs.core_needed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
-      CARGO_INCREMENTAL: '0'
-      CARGO_BUILD_JOBS: '2'
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - uses: actions/setup-node@v6
         with: { node-version: 24 }
+      - name: Load Core verification configuration
+        id: config
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const config = JSON.parse(fs.readFileSync("scripts/core-verification.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `toolchain=${config.toolchain}\n`);
+            for (const [key, value] of Object.entries(config.environment)) {
+              fs.appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`);
+            }
+          '
       - name: Restore successful Core verification
         id: verified
         uses: actions/cache/restore@v4
         with:
           path: .core-verification
-          # Exact match only. Workflow changes invalidate the verification contract.
-          key: core-verified-v1-${{ runner.os }}-${{ runner.arch }}-rust1.95.0-${{ needs.prepare.outputs.core_commit }}-${{ hashFiles('.github/workflows/build.yml') }}
+          # Exact match only; packaging changes do not invalidate verification.
+          key: core-verified-v1-${{ runner.os }}-${{ runner.arch }}-ubuntu24.04-rust${{ steps.config.outputs.toolchain }}-${{ needs.prepare.outputs.core_commit }}-${{ hashFiles('scripts/verify-core.sh', 'scripts/core-verification.json', 'scripts/download.mjs', 'scripts/download-retry.mjs', 'scripts/plan.mjs') }}
       - name: Download frozen Core source for verification
         if: steps.verified.outputs.cache-hit != 'true'
         run: node scripts/download.mjs source core core-source.zip
@@ -89,7 +98,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: steps.verified.outputs.cache-hit != 'true'
         with:
-          toolchain: "1.95.0"
+          toolchain: ${{ steps.config.outputs.toolchain }}
           components: rustfmt, clippy
       - name: Cache Core verification dependencies
         if: steps.verified.outputs.cache-hit != 'true'
@@ -102,11 +111,7 @@ jobs:
       - name: Verify Core formatting, lint and workspace tests
         if: steps.verified.outputs.cache-hit != 'true'
         shell: bash
-        run: |
-          cd "$SOURCE_DIR"
-          cargo fmt --all -- --check
-          cargo clippy --workspace --locked -- -D warnings
-          cargo test --workspace --locked
+        run: bash scripts/verify-core.sh
       - name: Record successful Core verification
         if: success() && steps.verified.outputs.cache-hit != 'true'
         shell: bash
@@ -125,292 +130,27 @@ jobs:
         if: steps.verified.outputs.cache-hit == 'true'
         run: echo 'Exact Core verification cache hit; formatting, lint and workspace tests already passed for this commit and workflow.'
 
-  core:
-    environment: MYBUDDY
+  platforms:
     needs: [prepare, verify-core]
-    env:
-      UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
-    if: (needs.prepare.outputs.mode == 'core' || needs.prepare.outputs.mode == 'bundle') && needs.prepare.outputs.core_needed == 'true'
+    if: always() && !cancelled() && needs.prepare.result == 'success' && (needs.verify-core.result == 'success' || needs.verify-core.result == 'skipped')
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.core_matrix) }}
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v6
-        with: { persist-credentials: false }
-      - uses: actions/setup-node@v6
-        with: { node-version: 24 }
-      - name: Download frozen Core source
-        run: node scripts/download.mjs source core core-source.zip
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Extract source on macOS
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          mkdir core-source
-          ditto -x -k core-source.zip core-source
-          SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
-          test -n "$SOURCE_DIR"
-          mv "$SOURCE_DIR" core-src
-          echo "SOURCE_DIR=core-src" >> "$GITHUB_ENV"
-      - name: Extract source on Linux
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          mkdir core-source
-          unzip -q core-source.zip -d core-source
-          SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
-          test -n "$SOURCE_DIR"
-          mv "$SOURCE_DIR" core-src
-          echo "SOURCE_DIR=core-src" >> "$GITHUB_ENV"
-      - name: Extract source on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Expand-Archive -Path core-source.zip -DestinationPath core-source-archive
-          $sourceDir = Get-ChildItem core-source-archive -Directory | Select-Object -First 1
-          if (-not $sourceDir) { throw 'source archive has no root directory' }
-          New-Item -ItemType Directory -Force core-src | Out-Null
-          Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination core-src
-          "SOURCE_DIR=$((Resolve-Path core-src).Path)" >> $env:GITHUB_ENV
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.95.0"
-          targets: ${{ matrix.rustTarget }}
-      - name: Cache Core release dependencies
-        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-        with:
-          workspaces: core-src -> target
-          prefix-key: mybuddy-core-release-v1
-          key: ${{ matrix.target }}-${{ matrix.rustflags || 'default' }}-${{ matrix.useCross || false }}-${{ env.CROSS_GIT_REV }}
-          cache-on-failure: true
-          # Cross compiles inside Docker; only share host Cargo downloads/tools there.
-          cache-targets: ${{ matrix.useCross != true }}
-      - name: Remove conflicting MSVC linker
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Remove-Item 'C:\Program Files\Git\usr\bin\link.exe' -Force -ErrorAction SilentlyContinue
-      - name: Install pinned Linux arm64 cross tool
-        if: matrix.useCross == true
-        run: cargo install cross --git https://github.com/cross-rs/cross --rev "$CROSS_GIT_REV" --locked
-      - name: Build Core
-        shell: bash
-        env:
-          RUSTFLAGS: ${{ matrix.rustflags || '' }}
-        run: |
-          if [ "${{ matrix.useCross || false }}" = true ]; then
-            (cd "$SOURCE_DIR" && cross build --locked --release --target "${{ matrix.rustTarget }}" -p mybuddy-core-app)
-          else
-            (cd "$SOURCE_DIR" && cargo build --locked --release --target "${{ matrix.rustTarget }}" -p mybuddy-core-app)
-          fi
-      - name: Verify Core Linux GLIBC baseline
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          LIMIT=GLIBC_2.34
-          if [ "${{ matrix.target }}" = linux-arm64 ]; then LIMIT=GLIBC_2.30; fi
-          bash "$SOURCE_DIR/scripts/check-glibc-baseline.sh" "$SOURCE_DIR/target/${{ matrix.rustTarget }}/release/${{ matrix.binary }}" "$LIMIT"
-      - name: Package Core on Unix
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          mkdir dist
-          (cd "$SOURCE_DIR/target/${{ matrix.rustTarget }}/release" && zip -q -j "$GITHUB_WORKSPACE/dist/mybuddy-core-${{ matrix.target }}.zip" "${{ matrix.binary }}")
-      - name: Package Core on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "$env:SOURCE_DIR/target/${{ matrix.rustTarget }}/release/${{ matrix.binary }}" -DestinationPath "dist/mybuddy-core-${{ matrix.target }}.zip" -Force
-      - name: Upload Core package to Update Server
-        run: node scripts/upload.mjs core "${{ matrix.target }}" dist
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-
-  desktop:
-    environment: MYBUDDY
-    needs: [prepare, core]
-    env:
-      UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
-      BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.build-cache/bun
-      npm_config_cache: ${{ github.workspace }}/.build-cache/npm
-      ELECTRON_CACHE: ${{ github.workspace }}/.build-cache/electron
-      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.build-cache/electron-builder
-    if: always() && needs.prepare.outputs.desktop_needed == 'true' && (needs.prepare.outputs.mode == 'desktop' || (needs.prepare.outputs.mode == 'bundle' && (needs.core.result == 'success' || needs.prepare.outputs.core_needed == 'false')))
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.desktop_matrix) }}
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v6
-        with: { persist-credentials: false }
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}
-          bun-download-url: ${{ matrix.target == 'windows-arm64' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-aarch64.zip' || '' }}
-      - name: Restore packaged Desktop files
-        id: packaged
-        uses: actions/cache/restore@v4
-        with:
-          path: desktop-dist
-          key: desktop-v1-${{ inputs.task_id }}-${{ matrix.target }}-${{ needs.prepare.outputs.source_commit }}-${{ needs.prepare.outputs.core_commit }}
-      - uses: actions/setup-go@v6
-        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
-        with:
-          go-version: '1.24'
-          cache: false
-      - name: Download frozen Desktop source
-        if: steps.packaged.outputs.cache-hit != 'true'
-        run: node scripts/download.mjs source desktop desktop-source.zip
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Extract source on macOS
-        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          mkdir source
-          ditto -x -k desktop-source.zip source
-          SOURCE_DIR=$(find source -mindepth 1 -maxdepth 1 -type d | head -1)
-          test -n "$SOURCE_DIR"
-          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
-      - name: Extract source on Linux
-        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          mkdir source
-          unzip -q desktop-source.zip -d source
-          SOURCE_DIR=$(find source -mindepth 1 -maxdepth 1 -type d | head -1)
-          test -n "$SOURCE_DIR"
-          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
-      - name: Extract source on Windows
-        if: runner.os == 'Windows' && steps.packaged.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          Expand-Archive -Path desktop-source.zip -DestinationPath source-archive
-          $sourceDir = Get-ChildItem source-archive -Directory | Select-Object -First 1
-          if (-not $sourceDir) { throw 'source archive has no root directory' }
-          New-Item -ItemType Directory -Force src | Out-Null
-          Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination src
-          "SOURCE_DIR=$((Resolve-Path src).Path)" >> $env:GITHUB_ENV
-      - name: Cache Desktop downloads
-        if: steps.packaged.outputs.cache-hit != 'true'
-        uses: actions/cache@v4
-        with:
-          path: .build-cache
-          key: desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-bun${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}-${{ hashFiles('**/bun.lock', '**/bun.lockb', '**/package.json') }}
-          restore-keys: |
-            desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-bun${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}-
-      - name: Download task-bound Core from Update Server
-        if: steps.packaged.outputs.cache-hit != 'true'
-        run: node scripts/download.mjs dependency "${{ matrix.target }}" core-dependency
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Extract Core on macOS
-        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          mkdir core-input
-          ditto -x -k core-dependency core-input
-          CORE_BINARY=$(find core-input -type f \( -name mybuddy-core -o -name mybuddy-core.exe \) | head -1)
-          test -n "$CORE_BINARY"
-          echo "CORE_BINARY=$(cd "$(dirname "$CORE_BINARY")" && pwd)/$(basename "$CORE_BINARY")" >> "$GITHUB_ENV"
-      - name: Extract Core on Linux
-        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          mkdir core-input
-          unzip -q core-dependency -d core-input
-          CORE_BINARY=$(find core-input -type f \( -name mybuddy-core -o -name mybuddy-core.exe \) | head -1)
-          test -n "$CORE_BINARY"
-          echo "CORE_BINARY=$(cd "$(dirname "$CORE_BINARY")" && pwd)/$(basename "$CORE_BINARY")" >> "$GITHUB_ENV"
-      - name: Extract Core on Windows
-        if: runner.os == 'Windows' && steps.packaged.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          Expand-Archive -Path core-dependency -DestinationPath core-input
-          $binary = Get-ChildItem core-input -Recurse -File | Where-Object { $_.Name -in @('mybuddy-core', 'mybuddy-core.exe') } | Select-Object -First 1
-          if (-not $binary) { throw 'Core package has no executable' }
-          "CORE_BINARY=$($binary.FullName)" >> $env:GITHUB_ENV
-      - name: Install Linux packaging dependencies
-        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm libnss3-dev libatk-bridge2.0-dev libdrm2 libxkbcommon-dev libxss1 libatspi2.0-dev libgtk-3-dev libxrandr2 libasound2-dev
-      - name: Install Desktop dependencies
-        if: runner.os != 'Windows' && steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          cd "$SOURCE_DIR"
-          bun install --frozen-lockfile
-          node "$GITHUB_WORKSPACE/scripts/install-target-codex.mjs" "$PWD" "${{ matrix.platform }}" "${{ matrix.arch }}"
-      - name: Install Desktop dependencies on Windows
-        if: runner.os == 'Windows' && steps.packaged.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          "MYBUDDY_BUILD_BUN_EXECUTABLE=$((Get-Command bun -CommandType Application).Source)" >> $env:GITHUB_ENV
-          Set-Location $env:SOURCE_DIR
-          node -p "'Node architecture: ' + process.arch"
-          bun -e "console.log('Bun architecture: ' + process.arch)"
-          bun install --frozen-lockfile --network-concurrency=16
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node "$env:GITHUB_WORKSPACE/scripts/install-target-codex.mjs" "$env:SOURCE_DIR" "${{ matrix.platform }}" "${{ matrix.arch }}"
-      - name: Apply task-managed MyBuddy version
-        if: steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: node scripts/set-application-version.mjs "$SOURCE_DIR" "${{ needs.prepare.outputs.application_version }}"
-      - name: Prepare task-bound Core resources
-        if: steps.packaged.outputs.cache-hit != 'true'
-        run: node scripts/prepare-core-bundle.mjs "${{ matrix.binary }}" core-bundle
-        env:
-          TASK_CORE_BINARY: ${{ env.CORE_BINARY }}
-      - name: Build Desktop
-        if: steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: cd "$SOURCE_DIR" && ${{ matrix.desktopCommand }}
-        env:
-          MYBUDDY_UPDATE_BASE_URL: ${{ matrix.platform != 'linux' && format('{0}/releases/{1}', secrets.MYBUDDY_UPDATE_SERVER_URL, needs.prepare.outputs.channel) || '' }}
-          MYBUDDY_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_UPDATE_PUBLIC_KEYS }}
-          MYBUDDY_BACKEND_LOCAL_BUNDLE_DIR: ${{ github.workspace }}/core-bundle
-          MYBUDDY_BACKEND_ARCH: ${{ matrix.arch }}
-          MYBUDDY_BACKEND_VERSION: ${{ needs.prepare.outputs.core_tag }}
-          NODE_OPTIONS: --max-old-space-size=8192
-          npm_config_arch: ${{ matrix.arch }}
-          npm_config_target_arch: ${{ matrix.arch }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          CI: "true"
-      - name: Collect Desktop artifacts
-        if: steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          mkdir desktop-dist
-          find "$SOURCE_DIR/out" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.msi' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.yml' -o -name '*.blockmap' \) -exec cp {} desktop-dist/ \;
-          test -n "$(find desktop-dist -type f -maxdepth 1 -print -quit)"
-      - name: Reuse already uploaded task artifacts
-        if: steps.packaged.outputs.cache-hit != 'true'
-        run: node scripts/reuse-artifacts.mjs "${{ matrix.target }}" desktop-dist
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Generate external Linux blockmaps
-        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
-        shell: bash
-        run: node scripts/prepare-blockmaps.mjs "$SOURCE_DIR" desktop-dist
-      - name: Save packaged Desktop files before upload
-        if: steps.packaged.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: desktop-dist
-          key: ${{ steps.packaged.outputs.cache-primary-key }}
-      - name: Upload Desktop packages to Update Server
-        run: node scripts/upload.mjs desktop "${{ matrix.target }}" desktop-dist
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
+      matrix: ${{ fromJSON(needs.prepare.outputs.platform_matrix) }}
+    uses: ./.github/workflows/platform.yml
+    with:
+      task_id: ${{ inputs.task_id }}
+      platform_matrix: ${{ format('{{"include":[{0}]}}', toJSON(matrix)) }}
+      core_needed: ${{ matrix.core_needed }}
+      desktop_needed: ${{ matrix.desktop_needed }}
+      source_commit: ${{ needs.prepare.outputs.source_commit }}
+      core_commit: ${{ needs.prepare.outputs.core_commit }}
+      core_tag: ${{ needs.prepare.outputs.core_tag }}
+      application_version: ${{ needs.prepare.outputs.application_version }}
+      channel: ${{ needs.prepare.outputs.channel }}
 
   complete:
     environment: MYBUDDY
-    needs: [prepare, verify-core, core, desktop]
+    needs: [prepare, verify-core, platforms]
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
     if: always()
@@ -425,8 +165,8 @@ jobs:
         run: |
           MODE='${{ needs.prepare.outputs.mode }}'
           VERIFY='${{ needs.verify-core.result }}'
-          CORE='${{ needs.core.result }}'
-          DESKTOP='${{ needs.desktop.result }}'
+          CORE='${{ needs.platforms.result }}'
+          DESKTOP='${{ needs.platforms.result }}'
           SUCCESS=false
           CORE_NEEDED='${{ needs.prepare.outputs.core_needed }}'
           DESKTOP_NEEDED='${{ needs.prepare.outputs.desktop_needed }}'

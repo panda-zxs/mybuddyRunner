@@ -49,7 +49,12 @@ export function matrices(plan) {
   const desktopCached = new Set(plan.desktopCachedTargets || []);
   const core = plan.targets.filter((target) => !cached.has(target)).map((target) => ({ target, ...targetDefinitions[target], os: targetDefinitions[target].coreOS }));
   const desktop = plan.targets.filter((target) => !desktopCached.has(target)).map((target) => ({ target, ...targetDefinitions[target], os: targetDefinitions[target].desktopOS }));
-  return { core: { include: core }, desktop: { include: desktop } };
+  const platforms = plan.targets.map((target) => ({
+    target, ...targetDefinitions[target],
+    core_needed: plan.mode !== "desktop" && !cached.has(target),
+    desktop_needed: plan.mode !== "core" && !desktopCached.has(target),
+  }));
+  return { core: { include: core }, desktop: { include: desktop }, platforms: { include: platforms } };
 }
 
 export function verifyPlanDigest(raw, expected) {

@@ -1,3 +1,5 @@
+import { rename, rm } from "node:fs/promises";
+import { downloadWithRetry } from "./download-retry.mjs";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
@@ -11,6 +13,13 @@ let path;
 if (kind === "source" && ["core", "desktop"].includes(name)) path = `/releases/ci/v1/tasks/${taskId}/sources/${name}/archive.zip`;
 else if (kind === "dependency" && /^[a-z]+-(?:arm64|x64)$/.test(name)) path = `/releases/ci/v1/tasks/${taskId}/dependencies/core/${name}`;
 else throw new Error("invalid download request");
-const response = await fetch(new URL(path, base), { headers: { Authorization: `Bearer ${secret}` }, redirect: "error" });
-if (!response.ok || !response.body) throw new Error(`download failed (${response.status})`);
-await pipeline(Readable.fromWeb(response.body), createWriteStream(output, { mode: 0o600 }));
+const partial = `${output}.partial`;
+try {
+  await downloadWithRetry(new URL(path, base), { headers: { Authorization: `Bearer ${secret}` } }, async (response) => {
+    if (!response.body) throw new Error("empty download response");
+    await pipeline(Readable.fromWeb(response.body), createWriteStream(partial, { mode: 0o600 }));
+  });
+  await rename(partial, output);
+} finally {
+  await rm(partial, { force: true });
+}
