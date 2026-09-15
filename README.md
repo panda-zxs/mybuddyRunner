@@ -22,6 +22,14 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 
 支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`、`linux-x64`、`linux-arm64`。每个矩阵任务把制品直接上传到 Update Server 的任务暂存区。
 
+## 构建缓存
+
+- Core 验证与发布编译分别缓存 Cargo 下载和依赖编译产物；缓存键包含工具链、依赖清单和编译环境，发布缓存进一步按目标平台与编译参数隔离。源码移至稳定目录，避免 GitLab ZIP 的 commit 根目录降低复用率。
+- Rust 测试失败后仍保存依赖缓存。缓存不代替格式检查、Clippy 或测试；首次运行仍需冷编译。Linux arm64 的 cross 构建只缓存宿主 Cargo 下载和工具，不缓存容器 target。
+- Desktop 缓存 Bun/npm 下载、Electron 和 electron-builder 工具，按宿主系统、架构、目标平台、Bun 版本和锁文件隔离。每次仍执行 frozen-lockfile 安装，不缓存 node_modules。
+- 同一任务的完整 Desktop 包继续使用原有精确缓存，上传重试可直接复用；Core 成品仍由 Update Server 按提交和平台复用。
+- 修改工作流不影响已启动的运行；新调度任务才会使用新配置。缓存命中率和耗时改善需在后续运行中验证。
+
 ## 本地校验
 
 ```bash

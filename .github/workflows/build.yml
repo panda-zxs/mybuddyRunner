@@ -74,11 +74,20 @@ jobs:
           unzip -q core-source.zip -d core-source
           SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
-          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          # Keep Cargo paths stable across GitLab archives with different commit names.
+          mv "$SOURCE_DIR" core-verify-src
+          echo "SOURCE_DIR=core-verify-src" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.95.0"
           components: rustfmt, clippy
+      - name: Cache Core verification dependencies
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: core-verify-src -> target
+          prefix-key: mybuddy-core-verify-v1
+          cache-on-failure: true
+          cache-bin: false
       - name: Verify Core formatting, lint and workspace tests
         shell: bash
         run: |
@@ -114,7 +123,8 @@ jobs:
           ditto -x -k core-source.zip core-source
           SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
-          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          mv "$SOURCE_DIR" core-src
+          echo "SOURCE_DIR=core-src" >> "$GITHUB_ENV"
       - name: Extract source on Linux
         if: runner.os == 'Linux'
         shell: bash
@@ -123,7 +133,8 @@ jobs:
           unzip -q core-source.zip -d core-source
           SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
-          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          mv "$SOURCE_DIR" core-src
+          echo "SOURCE_DIR=core-src" >> "$GITHUB_ENV"
       - name: Extract source on Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -138,6 +149,15 @@ jobs:
         with:
           toolchain: "1.95.0"
           targets: ${{ matrix.rustTarget }}
+      - name: Cache Core release dependencies
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: core-src -> target
+          prefix-key: mybuddy-core-release-v1
+          key: ${{ matrix.target }}-${{ matrix.rustflags || 'default' }}-${{ matrix.useCross || false }}-${{ env.CROSS_GIT_REV }}
+          cache-on-failure: true
+          # Cross compiles inside Docker; only share host Cargo downloads/tools there.
+          cache-targets: ${{ matrix.useCross != true }}
       - name: Remove conflicting MSVC linker
         if: runner.os == 'Windows'
         shell: pwsh
@@ -184,6 +204,10 @@ jobs:
     needs: [prepare, core]
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
+      BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.build-cache/bun
+      npm_config_cache: ${{ github.workspace }}/.build-cache/npm
+      ELECTRON_CACHE: ${{ github.workspace }}/.build-cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.build-cache/electron-builder
     if: always() && needs.prepare.outputs.desktop_needed == 'true' && (needs.prepare.outputs.mode == 'desktop' || (needs.prepare.outputs.mode == 'bundle' && (needs.core.result == 'success' || needs.prepare.outputs.core_needed == 'false')))
     strategy:
       fail-fast: false
@@ -244,6 +268,14 @@ jobs:
           New-Item -ItemType Directory -Force src | Out-Null
           Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination src
           "SOURCE_DIR=$((Resolve-Path src).Path)" >> $env:GITHUB_ENV
+      - name: Cache Desktop downloads
+        if: steps.packaged.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: .build-cache
+          key: desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-bun${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}-${{ hashFiles('**/bun.lock', '**/bun.lockb', '**/package.json') }}
+          restore-keys: |
+            desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-bun${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}-
       - name: Download task-bound Core from Update Server
         if: steps.packaged.outputs.cache-hit != 'true'
         run: node scripts/download.mjs dependency "${{ matrix.target }}" core-dependency
