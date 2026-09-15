@@ -103,3 +103,19 @@ test("verifies frozen Core source in Actions before building release artifacts",
   assert.match(workflow, /cargo fmt --all -- --check\n\s+cargo clippy --workspace --locked -- -D warnings\n\s+cargo test --workspace --locked/);
   assert.match(workflow, /needs: \[prepare, verify-core, core, desktop\]/);
 });
+
+test("reuses verification only for an exact source and verification contract", () => {
+  const verify = workflow.slice(workflow.indexOf("\n  verify-core:"), workflow.indexOf("\n  core:"));
+  const restore = verify.slice(verify.indexOf("      - name: Restore successful"), verify.indexOf("      - name: Download frozen"));
+  assert.match(restore, /actions\/cache\/restore@v4/);
+  assert.match(restore, /runner\.os.*runner\.arch.*rust1\.95\.0.*needs\.prepare\.outputs\.core_commit.*hashFiles\('\.github\/workflows\/build\.yml'\)/);
+  assert.doesNotMatch(restore, /restore-keys:|lookup-only:/);
+  for (const name of ["Download frozen Core source for verification", "Extract Core verification source", "Cache Core verification dependencies", "Verify Core formatting, lint and workspace tests"]) {
+    assert.ok(verify.includes(`- name: ${name}\n        if: steps.verified.outputs.cache-hit != 'true'`));
+  }
+  const save = verify.slice(verify.indexOf("      - name: Record successful"));
+  assert.equal((save.match(/if: success\(\) && steps\.verified\.outputs\.cache-hit != 'true'/g) || []).length, 2);
+  assert.match(save, /key: \$\{\{ steps\.verified\.outputs\.cache-primary-key \}\}/);
+  assert.doesNotMatch(verify, /continue-on-error:/);
+  assert.ok(verify.indexOf("cargo test --workspace --locked") < verify.indexOf("      - name: Record successful"));
+});

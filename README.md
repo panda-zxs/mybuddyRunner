@@ -24,6 +24,8 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 
 ## 构建缓存
 
+- Core 验证成功记录以 Core commit、Rust 1.95.0、宿主系统/架构及整个工作流文件摘要为精确缓存键；不使用前缀回退。相同条件命中时跳过源码下载、工具链安装及完整验证。工作流任意变更会使旧记录失效；仅完整验证成功后保存记录，失败或取消不保存。缓存过期或被淘汰时安全地重新验证。
+
 - Core 验证与发布编译分别缓存 Cargo 下载和依赖编译产物；缓存键包含工具链、依赖清单和编译环境，发布缓存进一步按目标平台与编译参数隔离。源码移至稳定目录，避免 GitLab ZIP 的 commit 根目录降低复用率。
 - Rust 测试失败后仍保存依赖缓存。缓存不代替格式检查、Clippy 或测试；首次运行仍需冷编译。Linux arm64 的 cross 构建只缓存宿主 Cargo 下载和工具，不缓存容器 target。
 - Desktop 缓存 Bun/npm 下载、Electron 和 electron-builder 工具，按宿主系统、架构、目标平台、Bun 版本和锁文件隔离。每次仍执行 frozen-lockfile 安装，不缓存 node_modules。

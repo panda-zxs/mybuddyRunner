@@ -63,11 +63,20 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-node@v6
         with: { node-version: 24 }
+      - name: Restore successful Core verification
+        id: verified
+        uses: actions/cache/restore@v4
+        with:
+          path: .core-verification
+          # Exact match only. Workflow changes invalidate the verification contract.
+          key: core-verified-v1-${{ runner.os }}-${{ runner.arch }}-rust1.95.0-${{ needs.prepare.outputs.core_commit }}-${{ hashFiles('.github/workflows/build.yml') }}
       - name: Download frozen Core source for verification
+        if: steps.verified.outputs.cache-hit != 'true'
         run: node scripts/download.mjs source core core-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Extract Core verification source
+        if: steps.verified.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir core-source
@@ -78,10 +87,12 @@ jobs:
           mv "$SOURCE_DIR" core-verify-src
           echo "SOURCE_DIR=core-verify-src" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.verified.outputs.cache-hit != 'true'
         with:
           toolchain: "1.95.0"
           components: rustfmt, clippy
       - name: Cache Core verification dependencies
+        if: steps.verified.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: core-verify-src -> target
@@ -89,12 +100,30 @@ jobs:
           cache-on-failure: true
           cache-bin: false
       - name: Verify Core formatting, lint and workspace tests
+        if: steps.verified.outputs.cache-hit != 'true'
         shell: bash
         run: |
           cd "$SOURCE_DIR"
           cargo fmt --all -- --check
           cargo clippy --workspace --locked -- -D warnings
           cargo test --workspace --locked
+      - name: Record successful Core verification
+        if: success() && steps.verified.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          VERIFIED_CORE_COMMIT: ${{ needs.prepare.outputs.core_commit }}
+        run: |
+          mkdir -p .core-verification
+          printf '%s\n' "$VERIFIED_CORE_COMMIT" > .core-verification/commit
+      - name: Save successful Core verification
+        if: success() && steps.verified.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .core-verification
+          key: ${{ steps.verified.outputs.cache-primary-key }}
+      - name: Report Core verification reuse
+        if: steps.verified.outputs.cache-hit == 'true'
+        run: echo 'Exact Core verification cache hit; formatting, lint and workspace tests already passed for this commit and workflow.'
 
   core:
     environment: MYBUDDY
