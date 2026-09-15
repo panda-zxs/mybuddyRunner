@@ -27,13 +27,10 @@ test("uses the MYBUDDY environment and injects public update trust only into des
 
 test("extracts GitLab ZIP sources with platform-native tools", () => {
   assert.match(workflow, /ditto -x -k core-source\.zip core-source/);
-  assert.match(workflow, /ditto -x -k aionrs-source\.zip aionrs-source/);
   assert.match(workflow, /ditto -x -k desktop-source\.zip source/);
   assert.match(workflow, /unzip -q core-source\.zip -d core-source/);
-  assert.match(workflow, /unzip -q aionrs-source\.zip -d aionrs-source/);
   assert.match(workflow, /unzip -q desktop-source\.zip -d source/);
   assert.match(workflow, /Expand-Archive -Path core-source\.zip -DestinationPath core-source-archive/);
-  assert.match(workflow, /Expand-Archive -Path aionrs-source\.zip -DestinationPath aionrs-source-archive/);
   assert.match(workflow, /Expand-Archive -Path desktop-source\.zip -DestinationPath source-archive/);
   assert.match(workflow, /Get-ChildItem -Force \$sourceDir\.FullName \| Move-Item -Destination core-src/);
   assert.match(workflow, /Get-ChildItem -Force \$sourceDir\.FullName \| Move-Item -Destination src/);
@@ -41,10 +38,9 @@ test("extracts GitLab ZIP sources with platform-native tools", () => {
   assert.doesNotMatch(workflow, /tar -xf (?:core|desktop)-source\.zip/);
 });
 
-test("downloads frozen mybuddyRS and patches Cargo to the local source", () => {
-  assert.match(workflow, /Download frozen mybuddyRS source[\s\S]*scripts\/download\.mjs source aionrs/);
-  assert.match(workflow, /node scripts\/configure-aionrs\.mjs "\$SOURCE_DIR" "\$AIONRS_DIR"/);
-  assert.doesNotMatch(workflow, /git clone[\s\S]*aionrs/);
+test("builds Core directly without an external agent SDK source", () => {
+  assert.match(workflow, /cargo build --locked --release[^\n]*-p mybuddy-core-app/);
+  assert.doesNotMatch(workflow, /source aionrs|configure-aionrs|cargo update -p aion-agent/);
 });
 
 test("reuses task-bound Core only through Update Server", () => {
@@ -57,8 +53,8 @@ test("binds Desktop packaging to the Core tag selected by Update Server", () => 
   assert.match(workflow, /core_tag: \$\{\{ steps\.plan\.outputs\.core_tag \}\}/);
   assert.match(workflow, /Prepare task-bound Core resources[\s\S]*prepare-core-bundle\.mjs/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
-  assert.match(desktopBuild, /AIONUI_BACKEND_LOCAL_BUNDLE_DIR: \$\{\{ github\.workspace \}\}\/core-bundle/);
-  assert.match(desktopBuild, /AIONUI_BACKEND_VERSION: \$\{\{ needs\.prepare\.outputs\.core_tag \}\}/);
+  assert.match(desktopBuild, /MYBUDDY_BACKEND_LOCAL_BUNDLE_DIR: \$\{\{ github\.workspace \}\}\/core-bundle/);
+  assert.match(desktopBuild, /MYBUDDY_BACKEND_VERSION: \$\{\{ needs\.prepare\.outputs\.core_tag \}\}/);
 });
 
 test("applies the task-managed MyBuddy version and avoids the empty Go cache warning", () => {
@@ -83,12 +79,12 @@ test("disables the unsupported automatic update feed for Linux installers", () =
 });
 
 test("packages and extracts every Core artifact as ZIP", () => {
-  assert.match(workflow, /zip -q -j "\$GITHUB_WORKSPACE\/dist\/aioncore-\$\{\{ matrix\.target \}\}\.zip"/);
-  assert.match(workflow, /Compress-Archive[\s\S]*aioncore-\$\{\{ matrix\.target \}\}\.zip/);
+  assert.match(workflow, /zip -q -j "\$GITHUB_WORKSPACE\/dist\/mybuddy-core-\$\{\{ matrix\.target \}\}\.zip"/);
+  assert.match(workflow, /Compress-Archive[\s\S]*mybuddy-core-\$\{\{ matrix\.target \}\}\.zip/);
   assert.match(workflow, /ditto -x -k core-dependency core-input/);
   assert.match(workflow, /unzip -q core-dependency -d core-input/);
   assert.match(workflow, /Expand-Archive -Path core-dependency -DestinationPath core-input/);
-  assert.doesNotMatch(workflow, /aioncore-\$\{\{ matrix\.target \}\}\.tar\.gz|tar -xf core-dependency/);
+  assert.doesNotMatch(workflow, /mybuddy-core-\$\{\{ matrix\.target \}\}\.tar\.gz|tar -xf core-dependency/);
 });
 
 

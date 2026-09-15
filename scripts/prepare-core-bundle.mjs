@@ -22,7 +22,7 @@ if (process.platform !== "win32") await chmod(path.join(root, binaryName), 0o755
 // npm_config_* values used by electron-builder can make the managed Node/npm
 // validation behave as an Electron cross-build. Prepare Core resources in a
 // clean process before the Desktop build adds those variables.
-const env = { ...process.env, AIONUI_BUNDLED_MANAGED_RESOURCES: "" };
+const env = { ...process.env, MYBUDDY_BUNDLED_MANAGED_RESOURCES: "" };
 for (const key of Object.keys(env)) {
   if (key.toLowerCase().startsWith("npm_config_")) delete env[key];
 }

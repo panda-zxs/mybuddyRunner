@@ -4,51 +4,54 @@ import { createHash } from "node:crypto";
 import { matrices, validatePlan, verifyPlanDigest } from "./plan.mjs";
 
 const id = "bt_0102030405060708090a0b0c";
-const core = { repository: "core", tag: "v0.2.1", commit: "a".repeat(40) };
-const aionrs = { repository: "aionrs", tag: "v0.2.11", commit: "c".repeat(40) };
-test("validates each build mode and expands supported targets", () => {
-  for (const plan of [
-    { schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["darwin-arm64"], sources: { core, aionrs } },
-    { schemaVersion: 1, taskId: id, mode: "desktop", channel: "beta", targets: ["windows-x64"], sources: { desktop: { repository: "desktop", tag: "v2.1.60", commit: "b".repeat(40) } }, coreReleaseId: "c".repeat(32) },
-    { schemaVersion: 1, taskId: id, mode: "bundle", channel: "internal", targets: ["linux-arm64"], sources: { core, aionrs, desktop: { repository: "desktop", tag: "v2.1.60", commit: "b".repeat(40) } } }
-  ]) assert.equal(matrices(validatePlan(plan, id)).core.include.length, 1);
-});
-test("rejects arbitrary source and target input", () => {
-  assert.throws(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["android"], sources: { core, aionrs } }, id));
-  assert.throws(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["darwin-arm64"], sources: { core, desktop: core } }, id));
-});
-test("accepts Core v0.1.71 and newer and rejects older versions", () => {
-  for (const tag of ["v0.1.71", "v0.1.72", "v0.2.0", "v1.0.0"]) {
-    assert.doesNotThrow(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["darwin-arm64"], sources: { core: { ...core, tag }, aionrs } }, id));
+const core = { repository: "core", tag: "v0.2.2", commit: "a".repeat(40) };
+const desktop = { repository: "desktop", tag: "v0.2.2", commit: "b".repeat(40) };
+function plan(mode = "bundle", changes = {}) {
+  return {
+    schemaVersion: 3, taskId: id, mode, channel: "internal", targets: ["darwin-arm64", "windows-x64"],
+    ...(mode === "core" ? {} : { uiVersion: "0.2.2", coreVersion: "0.2.2", buildNumber: 1, applicationVersion: "0.2.2-build.1" }),
+    sources: mode === "core" ? { core } : mode === "desktop" ? { desktop } : { core, desktop },
+    ...(mode === "desktop" ? { coreReleaseId: "c".repeat(32) } : {}),
+    ...changes,
+  };
+}
+
+test("validates Core, Desktop and bundle plans without an external SDK source", () => {
+  for (const mode of ["core", "desktop", "bundle"]) {
+    const selected = validatePlan(plan(mode), id);
+    assert.equal(matrices(selected).desktop.include.length, 2);
+    assert.deepEqual(Object.keys(selected.sources).sort(), mode === "core" ? ["core"] : mode === "desktop" ? ["desktop"] : ["core", "desktop"]);
   }
-  assert.throws(() => validatePlan({ schemaVersion: 1, taskId: id, mode: "core", channel: "stable", targets: ["darwin-arm64"], sources: { core: { ...core, tag: "v0.1.70" }, aionrs } }, id), /unsupported Core version/);
 });
-test("omits cached Core targets from the build matrix", () => {
-  const plan = validatePlan({ schemaVersion: 1, taskId: id, mode: "bundle", channel: "internal", targets: ["darwin-arm64", "windows-x64"], coreCachedTargets: ["darwin-arm64"], sources: { core, aionrs, desktop: { repository: "desktop", tag: "v2.1.60", commit: "b".repeat(40) } } }, id);
-  assert.deepEqual(matrices(plan).core.include.map((item) => item.target), ["windows-x64"]);
+test("rejects pre-migration plans, extraneous sources and invalid targets", () => {
+  for (const schemaVersion of [1, 2]) assert.throws(() => validatePlan(plan("core", { schemaVersion }), id), /invalid task plan/);
+  assert.throws(() => validatePlan(plan("core", { targets: ["android"] }), id), /invalid task targets/);
+  assert.throws(() => validatePlan(plan("core", { sources: { core, retired: core } }), id), /invalid task sources/);
+  assert.throws(() => validatePlan(plan("core", { sources: { core: { ...core, commit: "main" } } }), id), /invalid source selection/);
 });
-test("omits completed Desktop targets from a retry matrix", () => {
-  const plan = validatePlan({ schemaVersion: 2, taskId: id, mode: "bundle", channel: "stable", targets: ["darwin-arm64", "windows-x64"], uiVersion: "1.0.0", coreVersion: "0.1.71", buildNumber: 1, applicationVersion: "1.0.0-build.1", coreCachedTargets: ["darwin-arm64", "windows-x64"], desktopCachedTargets: ["darwin-arm64"], sources: { core: { ...core, tag: "v0.1.71" }, aionrs, desktop: { repository: "desktop", tag: "v1.0.0", commit: "b".repeat(40) } } }, id);
-  const result = matrices(plan);
-  assert.deepEqual(result.core.include, []);
-  assert.deepEqual(result.desktop.include.map((item) => item.target), ["windows-x64"]);
+test("requires Core v0.2.2 or newer for both source and candidate builds", () => {
+  for (const tag of ["v0.2.2", "v0.3.0", "v1.0.0"]) assert.doesNotThrow(() => validatePlan(plan("core", { sources: { core: { ...core, tag } } }), id));
+  for (const tag of ["v0.1.71", "v0.2.1"]) assert.throws(() => validatePlan(plan("core", { sources: { core: { ...core, tag } } }), id), /unsupported Core version/);
+  assert.throws(() => validatePlan(plan("desktop", { coreVersion: "0.2.1" }), id), /unsupported Core version/);
 });
-test("prepares Windows ARM64 Core on a native ARM64 Windows runner", () => {
-  const plan = validatePlan({ schemaVersion: 2, taskId: id, mode: "bundle", channel: "stable", targets: ["windows-arm64"], uiVersion: "1.0.0", coreVersion: "0.1.71", buildNumber: 2, applicationVersion: "1.0.0-build.2", coreCachedTargets: ["windows-arm64"], sources: { core: { ...core, tag: "v0.1.71" }, aionrs, desktop: { repository: "desktop", tag: "v1.0.0", commit: "b".repeat(40) } } }, id);
-  const [target] = matrices(plan).desktop.include;
-  assert.equal(target.target, "windows-arm64");
-  assert.equal(target.os, "windows-11-arm");
-  assert.equal(target.platform, "win32");
-  assert.equal(target.arch, "arm64");
+test("omits cached Core and completed Desktop targets from retry matrices", () => {
+  const selected = validatePlan(plan("bundle", { coreCachedTargets: ["darwin-arm64", "windows-x64"], desktopCachedTargets: ["darwin-arm64"] }), id);
+  assert.deepEqual(matrices(selected).core.include, []);
+  assert.deepEqual(matrices(selected).desktop.include.map(item => item.target), ["windows-x64"]);
+  assert.throws(() => validatePlan(plan("bundle", { coreCachedTargets: ["linux-x64"] }), id), /invalid cached Core targets/);
 });
-test("rejects a plan whose response bytes do not match the server digest", () => {
-  const raw = `{"schemaVersion":1,"taskId":"${id}"}`;
+test("uses branded binaries and native Windows ARM64 runners", () => {
+  const selected = validatePlan(plan("bundle", { targets: ["darwin-arm64", "windows-x64", "windows-arm64"] }), id);
+  const definitions = matrices(selected).core.include;
+  assert.equal(definitions[0].binary, "mybuddy-core");
+  assert.equal(definitions[1].binary, "mybuddy-core.exe");
+  assert.equal(definitions[2].os, "windows-11-arm");
+  assert.equal(definitions[2].arch, "arm64");
+});
+test("validates managed application version and immutable plan digest", () => {
+  assert.throws(() => validatePlan(plan("bundle", { applicationVersion: "0.2.2-build.2" }), id), /managed application version/);
+  const raw = JSON.stringify(plan());
   const digest = createHash("sha256").update(raw).digest("hex");
   assert.doesNotThrow(() => verifyPlanDigest(raw, digest));
-  assert.throws(() => verifyPlanDigest(raw + " ", digest));
-});
-test("validates the task-managed MyBuddy build version", () => {
-  const plan = { schemaVersion: 2, taskId: id, mode: "bundle", channel: "stable", targets: ["darwin-arm64"], uiVersion: "1.0.0", coreVersion: "0.1.71", buildNumber: 2, applicationVersion: "1.0.0-build.2", sources: { core: { ...core, tag: "v0.1.71" }, aionrs, desktop: { repository: "desktop", tag: "v1.0.0", commit: "b".repeat(40) } } };
-  assert.doesNotThrow(() => validatePlan(plan, id));
-  assert.throws(() => validatePlan({ ...plan, applicationVersion: "1.0.0-build.3" }, id), /managed application version/);
+  assert.throws(() => verifyPlanDigest(raw + " ", digest), /task plan digest mismatch/);
 });

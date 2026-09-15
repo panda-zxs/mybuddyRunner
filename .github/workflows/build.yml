@@ -66,52 +66,34 @@ jobs:
         run: node scripts/download.mjs source core core-source.zip
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
-      - name: Download frozen mybuddyRS source
-        run: node scripts/download.mjs source aionrs aionrs-source.zip
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Extract source on macOS
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          mkdir core-source aionrs-source
+          mkdir core-source
           ditto -x -k core-source.zip core-source
-          ditto -x -k aionrs-source.zip aionrs-source
           SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
-          AIONRS_DIR=$(find aionrs-source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
-          test -n "$AIONRS_DIR"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
-          echo "AIONRS_DIR=$AIONRS_DIR" >> "$GITHUB_ENV"
       - name: Extract source on Linux
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          mkdir core-source aionrs-source
+          mkdir core-source
           unzip -q core-source.zip -d core-source
-          unzip -q aionrs-source.zip -d aionrs-source
           SOURCE_DIR=$(find core-source -mindepth 1 -maxdepth 1 -type d | head -1)
-          AIONRS_DIR=$(find aionrs-source -mindepth 1 -maxdepth 1 -type d | head -1)
           test -n "$SOURCE_DIR"
-          test -n "$AIONRS_DIR"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
-          echo "AIONRS_DIR=$AIONRS_DIR" >> "$GITHUB_ENV"
       - name: Extract source on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Expand-Archive -Path core-source.zip -DestinationPath core-source-archive
-          Expand-Archive -Path aionrs-source.zip -DestinationPath aionrs-source-archive
           $sourceDir = Get-ChildItem core-source-archive -Directory | Select-Object -First 1
-          $aionrsDir = Get-ChildItem aionrs-source-archive -Directory | Select-Object -First 1
           if (-not $sourceDir) { throw 'source archive has no root directory' }
-          if (-not $aionrsDir) { throw 'mybuddyRS source archive has no root directory' }
           New-Item -ItemType Directory -Force core-src | Out-Null
-          New-Item -ItemType Directory -Force aionrs-src | Out-Null
           Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination core-src
-          Get-ChildItem -Force $aionrsDir.FullName | Move-Item -Destination aionrs-src
           "SOURCE_DIR=$((Resolve-Path core-src).Path)" >> $env:GITHUB_ENV
-          "AIONRS_DIR=$((Resolve-Path aionrs-src).Path)" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.95.0"
@@ -128,12 +110,10 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags || '' }}
         run: |
-          node scripts/configure-aionrs.mjs "$SOURCE_DIR" "$AIONRS_DIR"
-          (cd "$SOURCE_DIR" && cargo update -p aion-agent -p aion-compact -p aion-config -p aion-mcp -p aion-memory -p aion-process -p aion-protocol -p aion-providers -p aion-skills -p aion-tools -p aion-types)
           if [ "${{ matrix.useCross || false }}" = true ]; then
-            (cd "$SOURCE_DIR" && cross build --locked --release --target "${{ matrix.rustTarget }}" -p aionui-app)
+            (cd "$SOURCE_DIR" && cross build --locked --release --target "${{ matrix.rustTarget }}" -p mybuddy-core-app)
           else
-            (cd "$SOURCE_DIR" && cargo build --locked --release --target "${{ matrix.rustTarget }}" -p aionui-app)
+            (cd "$SOURCE_DIR" && cargo build --locked --release --target "${{ matrix.rustTarget }}" -p mybuddy-core-app)
           fi
       - name: Verify Core Linux GLIBC baseline
         if: runner.os == 'Linux'
@@ -147,13 +127,13 @@ jobs:
         shell: bash
         run: |
           mkdir dist
-          (cd "$SOURCE_DIR/target/${{ matrix.rustTarget }}/release" && zip -q -j "$GITHUB_WORKSPACE/dist/aioncore-${{ matrix.target }}.zip" "${{ matrix.binary }}")
+          (cd "$SOURCE_DIR/target/${{ matrix.rustTarget }}/release" && zip -q -j "$GITHUB_WORKSPACE/dist/mybuddy-core-${{ matrix.target }}.zip" "${{ matrix.binary }}")
       - name: Package Core on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "$env:SOURCE_DIR/target/${{ matrix.rustTarget }}/release/${{ matrix.binary }}" -DestinationPath "dist/aioncore-${{ matrix.target }}.zip" -Force
+          Compress-Archive -Path "$env:SOURCE_DIR/target/${{ matrix.rustTarget }}/release/${{ matrix.binary }}" -DestinationPath "dist/mybuddy-core-${{ matrix.target }}.zip" -Force
       - name: Upload Core package to Update Server
         run: node scripts/upload.mjs core "${{ matrix.target }}" dist
         env:
@@ -235,7 +215,7 @@ jobs:
         run: |
           mkdir core-input
           ditto -x -k core-dependency core-input
-          CORE_BINARY=$(find core-input -type f \( -name aioncore -o -name aioncore.exe \) | head -1)
+          CORE_BINARY=$(find core-input -type f \( -name mybuddy-core -o -name mybuddy-core.exe \) | head -1)
           test -n "$CORE_BINARY"
           echo "CORE_BINARY=$(cd "$(dirname "$CORE_BINARY")" && pwd)/$(basename "$CORE_BINARY")" >> "$GITHUB_ENV"
       - name: Extract Core on Linux
@@ -244,7 +224,7 @@ jobs:
         run: |
           mkdir core-input
           unzip -q core-dependency -d core-input
-          CORE_BINARY=$(find core-input -type f \( -name aioncore -o -name aioncore.exe \) | head -1)
+          CORE_BINARY=$(find core-input -type f \( -name mybuddy-core -o -name mybuddy-core.exe \) | head -1)
           test -n "$CORE_BINARY"
           echo "CORE_BINARY=$(cd "$(dirname "$CORE_BINARY")" && pwd)/$(basename "$CORE_BINARY")" >> "$GITHUB_ENV"
       - name: Extract Core on Windows
@@ -252,7 +232,7 @@ jobs:
         shell: pwsh
         run: |
           Expand-Archive -Path core-dependency -DestinationPath core-input
-          $binary = Get-ChildItem core-input -Recurse -File | Where-Object { $_.Name -in @('aioncore', 'aioncore.exe') } | Select-Object -First 1
+          $binary = Get-ChildItem core-input -Recurse -File | Where-Object { $_.Name -in @('mybuddy-core', 'mybuddy-core.exe') } | Select-Object -First 1
           if (-not $binary) { throw 'Core package has no executable' }
           "CORE_BINARY=$($binary.FullName)" >> $env:GITHUB_ENV
       - name: Install Linux packaging dependencies
@@ -292,9 +272,9 @@ jobs:
         env:
           MYBUDDY_UPDATE_BASE_URL: ${{ matrix.platform != 'linux' && format('{0}/releases/{1}', secrets.MYBUDDY_UPDATE_SERVER_URL, needs.prepare.outputs.channel) || '' }}
           MYBUDDY_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_UPDATE_PUBLIC_KEYS }}
-          AIONUI_BACKEND_LOCAL_BUNDLE_DIR: ${{ github.workspace }}/core-bundle
-          AIONUI_BACKEND_ARCH: ${{ matrix.arch }}
-          AIONUI_BACKEND_VERSION: ${{ needs.prepare.outputs.core_tag }}
+          MYBUDDY_BACKEND_LOCAL_BUNDLE_DIR: ${{ github.workspace }}/core-bundle
+          MYBUDDY_BACKEND_ARCH: ${{ matrix.arch }}
+          MYBUDDY_BACKEND_VERSION: ${{ needs.prepare.outputs.core_tag }}
           NODE_OPTIONS: --max-old-space-size=8192
           npm_config_arch: ${{ matrix.arch }}
           npm_config_target_arch: ${{ matrix.arch }}
