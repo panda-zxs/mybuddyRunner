@@ -17,6 +17,7 @@ test("keeps the build secret out of job-wide and business-source environments", 
 test("does not accept a dispatch-provided server URL", () => {
   assert.doesNotMatch(workflow, /inputs:\n[\s\S]*update_server_url:/);
   assert.equal((workflow.match(/UPDATE_SERVER_URL: \$\{\{ secrets\.MYBUDDY_UPDATE_SERVER_URL \}\}/g) || []).length, 5);
+  assert.match(mainWorkflow, /platforms:\n[\s\S]*?uses: \.\/\.github\/workflows\/platform\.yml\n    secrets: inherit\n    with:/);
 });
 
 test("uses the MYBUDDY environment and injects public update trust only into desktop packaging", () => {

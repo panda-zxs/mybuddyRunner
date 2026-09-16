@@ -5,7 +5,9 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 
 const [kind, name, output] = process.argv.slice(2);
-const base = new URL(process.env.UPDATE_SERVER_URL || "");
+const serverURL = process.env.UPDATE_SERVER_URL || "";
+if (!serverURL) throw new Error("UPDATE_SERVER_URL is missing; check MYBUDDY_UPDATE_SERVER_URL in the platform workflow secrets");
+const base = new URL(serverURL);
 const taskId = process.env.TASK_ID || "";
 const secret = process.env.MYBUDDY_BUILD_SECRET || "";
 if (base.protocol !== "https:" || !/^bt_[a-f0-9]{24}$/.test(taskId) || !secret || !output) throw new Error("invalid download configuration");
