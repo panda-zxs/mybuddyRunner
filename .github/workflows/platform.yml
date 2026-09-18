@@ -322,6 +322,39 @@ jobs:
         run: node scripts/prepare-core-bundle.mjs "${{ matrix.binary }}" core-bundle
         env:
           TASK_CORE_BINARY: ${{ env.CORE_BINARY }}
+      - name: Setup macOS code signing (macOS only)
+        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'temp-keychain-password' }}
+        run: |
+          if [ -n "$BUILD_CERTIFICATE_BASE64" ]; then
+            echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+            security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+            rm -f "$RUNNER_TEMP/certificate.p12"
+            echo "MYBUDDY_MAC_RELEASE_SIGNING=1" >> "$GITHUB_ENV"
+            echo "Certificate imported; release signing enabled"
+          else
+            echo "No BUILD_CERTIFICATE_BASE64 secret; building ad-hoc as before"
+          fi
+      - name: Prepare notary API key (macOS only, optional)
+        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          NOTARY_API_KEY_P8_BASE64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
+        run: |
+          if [ -n "$NOTARY_API_KEY_P8_BASE64" ]; then
+            printf '%s' "$NOTARY_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/notary-key.p8"
+            chmod 600 "$RUNNER_TEMP/notary-key.p8"
+            echo "NOTARY_API_KEY_PATH=$RUNNER_TEMP/notary-key.p8" >> "$GITHUB_ENV"
+            echo "Notary API key prepared"
+          fi
       - name: Build Desktop
         if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash
@@ -336,6 +369,13 @@ jobs:
           npm_config_arch: ${{ matrix.arch }}
           npm_config_target_arch: ${{ matrix.arch }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          IDENTITY: ${{ secrets.IDENTITY }}
+          CSC_NAME: ${{ secrets.IDENTITY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.TEAM_ID }}
           CI: "true"
       - name: Collect Desktop artifacts
         if: steps.packaged.outputs.cache-hit != 'true'
