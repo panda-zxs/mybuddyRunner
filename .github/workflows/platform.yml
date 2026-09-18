@@ -375,6 +375,10 @@ jobs:
           npm_config_arch: ${{ matrix.arch }}
           npm_config_target_arch: ${{ matrix.arch }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          npm_config_electron_builder_binaries_mirror: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+          npm_config_disturl: https://registry.npmmirror.com/-/binary/node
           IDENTITY: ${{ secrets.IDENTITY }}
           CSC_NAME: ${{ secrets.IDENTITY }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
