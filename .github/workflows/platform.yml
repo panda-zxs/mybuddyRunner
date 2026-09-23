@@ -409,6 +409,12 @@ jobs:
         with:
           path: desktop-dist
           key: ${{ steps.packaged.outputs.cache-primary-key }}
+      # electron-builder 的调试/构建元数据不是分发产物；缓存命中的旧 desktop-dist 也要过滤。
+      # Runs unconditionally so cached desktop-dist sets get filtered too.
+      - name: Drop build metadata from upload set
+        shell: bash
+        run: |
+          rm -f desktop-dist/builder-debug.yml desktop-dist/build.yml
       - name: Upload Desktop packages to Update Server
         run: node scripts/upload.mjs desktop "${{ matrix.target }}" desktop-dist
         env:
