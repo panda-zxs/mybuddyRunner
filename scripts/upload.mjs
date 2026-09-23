@@ -20,8 +20,9 @@ async function uploadStaged(file, filename, size, digest) {
   const issue = await fetch(artifactURL(filename, "/staged-upload"), { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ size, sha256: digest }) });
   if (issue.status === 404 || issue.status === 405) { await issue.body?.cancel(); return false; }
   if (!issue.ok) { await issue.body?.cancel(); throw new Error(`staged upload issue failed for ${filename} (${issue.status})`); }
-  const { url } = await issue.json();
-  await uploadWithRetry(async () => fetch(url, { method: "PUT", headers: { "Content-Type": "application/octet-stream", "Content-Length": String(size) }, body: createReadStream(file), duplex: "half", redirect: "error" }), filename);
+  const { url, headers = {} } = await issue.json();
+  // Signed headers (x-oss-acl etc.) must be replayed verbatim or OSS answers 403.
+  await uploadWithRetry(async () => fetch(url, { method: "PUT", headers: { ...headers, "Content-Length": String(size) }, body: createReadStream(file), duplex: "half", redirect: "error" }), filename);
   for (let attempt = 1; ; attempt++) {
     const register = await fetch(artifactURL(filename, "/staged"), { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ size, sha256: digest }) });
     const status = register.status;
