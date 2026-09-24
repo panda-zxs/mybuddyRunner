@@ -182,7 +182,6 @@ jobs:
         id: update-config
         shell: bash
         env:
-          UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_UPDATE_PUBLIC_KEYS }}
           PILOT_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS }}
           PILOT_OSS_HOST: ${{ vars.MYBUDDY_PILOT_OSS_HOST }}
           UPDATE_CHANNEL: ${{ inputs.channel }}
@@ -191,7 +190,7 @@ jobs:
           node --input-type=module -e '
             import { createHash } from "node:crypto";
             import fs from "node:fs";
-            const values = [process.env.UPDATE_SERVER_URL, process.env.UPDATE_PUBLIC_KEYS, process.env.PILOT_UPDATE_PUBLIC_KEYS, process.env.PILOT_OSS_HOST, process.env.UPDATE_CHANNEL, process.env.APPLICATION_VERSION];
+            const values = [process.env.UPDATE_SERVER_URL, process.env.PILOT_UPDATE_PUBLIC_KEYS, process.env.PILOT_OSS_HOST, process.env.UPDATE_CHANNEL, process.env.APPLICATION_VERSION];
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `digest=${createHash("sha256").update(JSON.stringify(values)).digest("hex")}\n`);
           '
       - name: Restore packaged Desktop files
@@ -368,8 +367,7 @@ jobs:
         shell: bash
         run: cd "$SOURCE_DIR" && ${{ matrix.desktopCommand }}
         env:
-          MYBUDDY_UPDATE_BASE_URL: ${{ matrix.platform != 'linux' && format('{0}/releases/{1}', secrets.MYBUDDY_UPDATE_SERVER_URL, inputs.channel) || '' }}
-          MYBUDDY_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_UPDATE_PUBLIC_KEYS }}
+          MYBUDDY_FEEDBACK_BASE_URL: ${{ matrix.platform != 'linux' && format('{0}/releases/{1}', secrets.MYBUDDY_UPDATE_SERVER_URL, inputs.channel) || '' }}
           MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS }}
           MYBUDDY_PILOT_OSS_HOST: ${{ vars.MYBUDDY_PILOT_OSS_HOST }}
           MYBUDDY_BACKEND_LOCAL_BUNDLE_DIR: ${{ github.workspace }}/core-bundle
