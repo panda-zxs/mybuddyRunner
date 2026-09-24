@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 
 export const COMPLETION_TIMEOUT_MS = 60 * 60 * 1000;
 
-// Release registration streams and verifies multi-platform installers before
+// Release registration still verifies the archived installers before
 // responding. Native HTTPS avoids fetch's independent five-minute header limit.
 export function completeTask({ base, taskId, secret, succeeded, reason = "", timeoutMs = COMPLETION_TIMEOUT_MS, request = httpsRequest }) {
   const url = new URL(`/releases/ci/v1/tasks/${taskId}/complete`, base);

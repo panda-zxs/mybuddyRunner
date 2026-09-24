@@ -102,8 +102,9 @@ test("uses native stable Windows ARM64 tools and propagates install failure from
 });
 
 
-test("verifies frozen Core source in Actions before building release artifacts", () => {
-  assert.match(mainWorkflow, /platforms:\n    needs: \[prepare, verify-core\]/);
+test("verifies frozen Core source before completing a parallel platform build", () => {
+  assert.match(mainWorkflow, /platforms:\n    needs: prepare/);
+  assert.match(mainWorkflow, /if \[ "\$CORE_NEEDED" = true \] && \[ "\$VERIFY" != success \]; then SUCCESS=false; fi/);
   assert.match(platformWorkflow, /needs: core/);
   const verifier = readFileSync(new URL("./verify-core.sh", import.meta.url), "utf8");
   assert.match(verifier, /cargo fmt --all -- --check/);

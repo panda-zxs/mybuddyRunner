@@ -131,8 +131,10 @@ jobs:
         run: echo 'Exact Core verification cache hit; formatting, lint and workspace tests already passed for this commit and workflow.'
 
   platforms:
-    needs: [prepare, verify-core]
-    if: always() && !cancelled() && needs.prepare.result == 'success' && (needs.verify-core.result == 'success' || needs.verify-core.result == 'skipped')
+    needs: prepare
+    # Compile Core while the same frozen commit is verified. The completion
+    # callback below is the only gate that makes staged packages reusable.
+    if: needs.prepare.result == 'success'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.platform_matrix) }}
@@ -174,7 +176,7 @@ jobs:
           if [ "$MODE" = core ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$MODE" = desktop ] && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$MODE" = bundle ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; } && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
-          if [ "$VERIFY" = failure ] || [ "$VERIFY" = cancelled ]; then SUCCESS=false; fi
+          if [ "$CORE_NEEDED" = true ] && [ "$VERIFY" != success ]; then SUCCESS=false; fi
           node scripts/complete.mjs "$SUCCESS" "verify=$VERIFY core=$CORE desktop=$DESKTOP"
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
