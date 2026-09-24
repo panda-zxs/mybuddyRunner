@@ -26,6 +26,8 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 
 主工作流负责冻结计划、Core 验证和最终回传。每个目标调用 `platform.yml`，内部按该平台的 Core → Desktop 顺序执行；平台之间互不等待，仍由最终任务汇总判断全平台结果。已缓存 Core、已完成 Desktop 及单独构建模式都按平台决定是否跳过。
 
+Desktop 的最终安装包版本由已冻结任务计划写入：UI 版本来自 GitLab Desktop tag，构建号由 Update Server 分配。源码根 `package.json` 的版本可能尚未随 tag 更新，Runner 在安装依赖后将其改为任务中的 `applicationVersion`；源码 commit 仍必须与任务计划一致。
+
 - 验证成功记录绑定 Core commit、固定 Ubuntu 24.04、宿主系统/架构、工具链和验证脚本/配置/下载规则摘要。仅成功保存、仅精确命中；打包规则变化不再触发重复验证。缓存淘汰时重新验证。
 - `core-verification.json` 管理工具链及编译配置；`verify-core.sh` 分别输出格式、Clippy、测试耗时，每分钟输出编译进程 CPU/内存摘要，失败立即退出。验证 job 限时 90 分钟，各平台 job 限时 120 分钟。
 - Core 验证和发布的 Cargo 依赖缓存分别管理，源码使用稳定路径；测试失败也保留依赖缓存。Linux arm64 cross 只缓存宿主下载与工具，不缓存容器 target。
