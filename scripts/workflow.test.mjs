@@ -24,9 +24,10 @@ test("uses the MYBUDDY environment and injects public update trust only into des
   assert.equal((workflow.match(/environment: MYBUDDY/g) || []).length, 5);
   assert.match(workflow, /outputs:\n[\s\S]*?mode:[\s\S]*?channel: \$\{\{ steps\.plan\.outputs\.channel \}\}/);
   const desktopBuild = workflow.slice(workflow.indexOf("      - name: Build Desktop"), workflow.indexOf("      - name: Collect Desktop artifacts"));
-  assert.match(desktopBuild, /MYBUDDY_UPDATE_BASE_URL: \$\{\{ matrix\.platform != 'linux' && format\('\{0\}\/releases\/\{1\}', secrets\.MYBUDDY_UPDATE_SERVER_URL, inputs\.channel\) \|\| '' \}\}/);
-  assert.match(desktopBuild, /MYBUDDY_UPDATE_PUBLIC_KEYS: \$\{\{ secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS \}\}/);
-  assert.equal((workflow.match(/secrets\.MYBUDDY_UPDATE_PUBLIC_KEYS/g) || []).length, 2);
+  assert.match(desktopBuild, /MYBUDDY_FEEDBACK_BASE_URL: \$\{\{ matrix\.platform != 'linux' && format\('\{0\}\/releases\/\{1\}', secrets\.MYBUDDY_UPDATE_SERVER_URL, inputs\.channel\) \|\| '' \}\}/);
+  assert.match(desktopBuild, /MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS: \$\{\{ secrets\.MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS \}\}/);
+  assert.match(desktopBuild, /MYBUDDY_PILOT_OSS_HOST: \$\{\{ vars\.MYBUDDY_PILOT_OSS_HOST \}\}/);
+  assert.equal((workflow.match(/secrets\.MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS/g) || []).length, 2);
 });
 
 test("extracts GitLab ZIP sources with platform-native tools", () => {
