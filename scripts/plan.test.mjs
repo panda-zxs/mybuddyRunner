@@ -65,3 +65,13 @@ test('platform pipelines isolate Core and Desktop cache decisions per target', (
   assert.equal(matrices({ mode: 'desktop', targets: ['windows-x64'] }).platforms.include[0].core_needed, false);
   assert.equal(matrices({ mode: 'core', targets: ['windows-x64'] }).platforms.include[0].desktop_needed, false);
 });
+
+test('completion requirements reflect the selected task mode and unfinished targets', () => {
+  const targets = ['windows-x64'];
+  for (const [mode, coreNeeded, desktopNeeded] of [['desktop', false, true], ['core', true, false], ['bundle', true, true]]) {
+    const result = matrices({ mode, targets });
+    assert.deepEqual([result.coreNeeded, result.desktopNeeded], [coreNeeded, desktopNeeded]);
+  }
+  const cached = matrices({ mode: 'bundle', targets, coreCachedTargets: targets, desktopCachedTargets: targets });
+  assert.deepEqual([cached.coreNeeded, cached.desktopNeeded], [false, false]);
+});

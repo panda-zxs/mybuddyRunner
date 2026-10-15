@@ -54,7 +54,11 @@ export function matrices(plan) {
     core_needed: plan.mode !== "desktop" && !cached.has(target),
     desktop_needed: plan.mode !== "core" && !desktopCached.has(target),
   }));
-  return { core: { include: core }, desktop: { include: desktop }, platforms: { include: platforms } };
+  return {
+    core: { include: core }, desktop: { include: desktop }, platforms: { include: platforms },
+    coreNeeded: platforms.some(item => item.core_needed),
+    desktopNeeded: platforms.some(item => item.desktop_needed),
+  };
 }
 
 export function verifyPlanDigest(raw, expected) {

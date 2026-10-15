@@ -1,10 +1,41 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { matrices } from "./plan.mjs";
 
 const mainWorkflow = readFileSync(new URL("../.github/workflows/build.yml", import.meta.url), "utf8");
 const platformWorkflow = readFileSync(new URL("../.github/workflows/platform.yml", import.meta.url), "utf8");
 const workflow = mainWorkflow + "\n" + platformWorkflow;
+
+test("completion accepts verified Core reuse and still rejects failed required work", () => {
+  const fetchPlan = readFileSync(new URL('./fetch-plan.mjs', import.meta.url), 'utf8');
+  assert.ok(fetchPlan.includes('core_needed=${result.coreNeeded}'));
+  assert.ok(fetchPlan.includes('desktop_needed=${result.desktopNeeded}'));
+  const targets = ['windows-x64'];
+  for (const [mode, verify, platform, cached, expected] of [
+    ['desktop', 'skipped', 'success', false, 'true'],
+    ['desktop', 'skipped', 'failure', false, 'false'],
+    ['bundle', 'failure', 'success', false, 'false'],
+    ['bundle', 'skipped', 'success', false, 'false'],
+    ['bundle', 'success', 'success', false, 'true'],
+    ['bundle', 'skipped', 'skipped', true, 'true'],
+  ]) {
+    const requirements = matrices({ mode, targets, ...(cached ? { coreCachedTargets: targets, desktopCachedTargets: targets } : {}) });
+    const values = {
+      'needs.prepare.outputs.mode': mode,
+      'needs.prepare.outputs.core_needed': String(requirements.coreNeeded),
+      'needs.prepare.outputs.desktop_needed': String(requirements.desktopNeeded),
+      'needs.verify-core.result': verify,
+      'needs.platforms.result': platform,
+    };
+    const body = mainWorkflow.split('      - name: Report task result')[1].split('        run: |\n')[1].split('        env:')[0]
+      .replace(/^ {10}/gm, '')
+      .replace(/\$\{\{ ([^}]+) \}\}/g, (_, key) => { assert.ok(key in values); return values[key]; })
+      .replace(/node scripts\/complete\.mjs[^\n]*/, 'printf "%s" "$SUCCESS"');
+    assert.equal(execFileSync('bash', ['-e', '-c', body], { encoding: 'utf8' }), expected, `${mode}/${verify}/${platform}`);
+  }
+});
 
 
 test("keeps the build secret out of job-wide and business-source environments", () => {
