@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream, readdirSync, renameSync, rmSync, s
 import { join } from "node:path";
 import { Transform, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { fetchWithRetry } from "./request-retry.mjs";
 
 const [target, directory] = process.argv.slice(2);
 const base = new URL(process.env.UPDATE_SERVER_URL || "");
@@ -14,9 +15,9 @@ for (const entry of readdirSync(directory, { withFileTypes: true })) {
   const file = join(directory, entry.name);
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(file)) hash.update(chunk);
-  const response = await fetch(new URL(`/releases/ci/v1/tasks/${taskId}/artifacts/desktop/${target}/${encodeURIComponent(entry.name)}`, base), {
+  const response = await fetchWithRetry(new URL(`/releases/ci/v1/tasks/${taskId}/artifacts/desktop/${target}/${encodeURIComponent(entry.name)}`, base), {
     headers: { Authorization: `Bearer ${secret}`, "If-None-Match": `"${hash.digest("hex")}"` }, redirect: "error",
-  });
+  }, { label: `artifact reuse check for ${entry.name}` });
   if (response.status === 304 || response.status === 404) { await response.body?.cancel(); continue; }
   if (!response.ok || !response.body) throw new Error(`artifact reuse failed (${response.status})`);
   const digest = response.headers.get("x-content-sha256");

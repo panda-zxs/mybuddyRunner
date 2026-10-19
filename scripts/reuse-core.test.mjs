@@ -22,7 +22,7 @@ test("registered Core is reused through the task-scoped endpoint without downloa
 test("only a missing Core permits fallback; authentication and service errors fail closed", async () => {
   assert.equal(await hasUploadedCore(config, async () => new Response(null, { status: 404 })), false);
   for (const status of [204, 302, 401, 403, 409, 500, 503]) {
-    await assert.rejects(hasUploadedCore(config, async () => new Response(null, { status })), /Core reuse check failed/);
+    await assert.rejects(hasUploadedCore(config, async () => new Response(null, { status }), { wait: async () => {} }), /Core reuse check failed/);
   }
   for (const headers of [{}, { "X-Content-SHA256": "a".repeat(64), "Content-Length": "0" }, { "X-Content-SHA256": "invalid", "Content-Length": "1" }]) {
     await assert.rejects(hasUploadedCore(config, async () => new Response(null, { headers })), /invalid registered Core metadata/);

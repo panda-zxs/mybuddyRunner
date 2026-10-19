@@ -1,18 +1,19 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fetchWithRetry } from "./request-retry.mjs";
 
 // The server authorizes this task and serves only its already registered bytes.
 // Checking this before restoring a local cache also avoids re-uploading a ZIP
 // rebuilt with different timestamps after a workflow/cache-key change.
-export async function hasUploadedCore({ serverURL, taskId, secret, target }, request = fetch) {
+export async function hasUploadedCore({ serverURL, taskId, secret, target }, request = fetch, retryOptions = {}) {
   const base = new URL(serverURL);
   if (base.protocol !== "https:" || base.username || base.password || !/^bt_[a-f0-9]{24}$/.test(taskId) ||
       !/^(darwin|windows|linux)-(arm64|x64)$/.test(target) || !secret) throw new Error("invalid Core reuse configuration");
   const url = new URL(`/releases/ci/v1/tasks/${taskId}/artifacts/core/${target}/mybuddy-core-${target}.zip`, base);
-  const response = await request(url, {
-    headers: { Authorization: `Bearer ${secret}` }, redirect: "error", signal: AbortSignal.timeout(30_000),
-  });
+  const response = await fetchWithRetry(url, {
+    headers: { Authorization: `Bearer ${secret}` }, redirect: "error",
+  }, { ...retryOptions, request, label: `Core reuse check for ${target}` });
   try {
     if (response.status === 404) return false;
     if (response.status !== 200) throw new Error(`Core reuse check failed (${response.status})`);

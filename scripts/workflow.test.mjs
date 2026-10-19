@@ -171,4 +171,7 @@ test("platform jobs preserve exact package caches and per-platform dependencies"
   assert.match(core, /core-package-v1-.*inputs.core_commit.*hashFiles/);
   assert.match(platformWorkflow, /key: desktop-v2-.*inputs.source_commit.*inputs.core_commit.*hashFiles.*steps.update-config.outputs.digest/);
   assert.ok(platformWorkflow.indexOf('Restore packaged Desktop files') < platformWorkflow.indexOf('oven-sh/setup-bun'));
+  assert.ok(platformWorkflow.indexOf('Collect Desktop artifacts') < platformWorkflow.indexOf('Save packaged Desktop files before upload'));
+  assert.ok(platformWorkflow.indexOf('Save packaged Desktop files before upload') < platformWorkflow.indexOf('Reuse already uploaded task artifacts'));
+  assert.match(platformWorkflow, /Reuse already uploaded task artifacts\n        run:/);
 });

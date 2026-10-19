@@ -54,7 +54,7 @@ jobs:
         with: { node-version: 24 }
       - name: Check already registered task-bound Core
         id: uploaded
-        timeout-minutes: 2
+        timeout-minutes: 3
         run: node scripts/reuse-core.mjs "${{ matrix.target }}"
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
@@ -457,27 +457,29 @@ jobs:
           mkdir desktop-dist
           find "$SOURCE_DIR/out" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.msi' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.yml' -o -name '*.blockmap' \) -exec cp {} desktop-dist/ \;
           test -n "$(find desktop-dist -type f -maxdepth 1 -print -quit)"
-      - name: Reuse already uploaded task artifacts
-        if: steps.packaged.outputs.cache-hit != 'true'
-        run: node scripts/reuse-artifacts.mjs "${{ matrix.target }}" desktop-dist
-        env:
-          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Generate external Linux blockmaps
         if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: node scripts/prepare-blockmaps.mjs "$SOURCE_DIR" desktop-dist
-      - name: Save packaged Desktop files before upload
-        if: steps.packaged.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: desktop-dist
-          key: ${{ steps.packaged.outputs.cache-primary-key }}
       # electron-builder 的调试/构建元数据不是分发产物；缓存命中的旧 desktop-dist 也要过滤。
       # Runs unconditionally so cached desktop-dist sets get filtered too.
       - name: Drop build metadata from upload set
         shell: bash
         run: |
           rm -f desktop-dist/builder-debug.yml desktop-dist/build.yml
+      # Preserve signed installers before any Update Server network checks.
+      - name: Save packaged Desktop files before upload
+        if: steps.packaged.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: desktop-dist
+          key: ${{ steps.packaged.outputs.cache-primary-key }}
+      # A prior attempt may have registered only part of its upload set; also
+      # reconcile cache hits against those immutable task-bound bytes.
+      - name: Reuse already uploaded task artifacts
+        run: node scripts/reuse-artifacts.mjs "${{ matrix.target }}" desktop-dist
+        env:
+          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Upload Desktop packages to Update Server
         run: node scripts/upload.mjs desktop "${{ matrix.target }}" desktop-dist
         env:

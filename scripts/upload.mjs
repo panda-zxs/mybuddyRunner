@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, readdirSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { uploadWithRetry } from "./upload-retry.mjs";
+import { fetchWithRetry } from "./request-retry.mjs";
 
 const [component, target, ...inputs] = process.argv.slice(2);
 const base = new URL(process.env.UPDATE_SERVER_URL || "");
@@ -14,15 +15,12 @@ const auth = { Authorization: `Bearer ${secret}` };
 const artifactURL = (filename, suffix = "") => new URL(`/releases/ci/v1/tasks/${taskId}/artifacts/${component}/${target}/${encodeURIComponent(filename)}${suffix}`, base);
 
 async function postWithRetry(url, payload, filename, label) {
-  for (let attempt = 1; ; attempt++) {
-    const response = await fetch(url, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const status = response.status;
-    await response.body?.cancel();
-    if (response.ok) return;
-    if (![408, 429, 500, 502, 503, 504].includes(status) || attempt === 4) throw new Error(`${label} failed for ${filename} (${status})`);
-    console.log(`Retrying ${label} of ${filename}, attempt ${attempt + 1}/4`);
-    await new Promise((resolve) => setTimeout(resolve, 5000 * attempt));
-  }
+  // Registration verifies OSS bytes in-region and may need longer than a small
+  // metadata request. Retain the previous five-minute header allowance.
+  const response = await fetchWithRetry(url, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify(payload), redirect: "error" },
+    { label: `${label} for ${filename}`, timeoutMs: 300_000 });
+  await response.body?.cancel();
+  if (!response.ok) throw new Error(`${label} failed for ${filename} (${response.status})`);
 }
 
 // Multipart first: each part is a bounded PUT that survives flaky cross-border
@@ -52,7 +50,8 @@ async function uploadParts(file, filename, size, plan) {
 // runner→OSS, then the server verifies the staged object in-region. Falls back
 // to the legacy streamed PUT when the server predates the staged endpoints.
 async function uploadStaged(file, filename, size, digest) {
-  const issueMultipart = await fetch(artifactURL(filename, "/staged-upload-multipart"), { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ size, sha256: digest }) });
+  const issueMultipart = await fetchWithRetry(artifactURL(filename, "/staged-upload-multipart"), { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ size, sha256: digest }), redirect: "error" },
+    { label: `staged multipart issue for ${filename}` });
   if (issueMultipart.ok) {
     const plan = await issueMultipart.json();
     const parts = await uploadParts(file, filename, size, plan);
@@ -62,7 +61,8 @@ async function uploadStaged(file, filename, size, digest) {
   await issueMultipart.body?.cancel();
   if (issueMultipart.status !== 404 && issueMultipart.status !== 405) throw new Error(`staged multipart issue failed for ${filename} (${issueMultipart.status})`);
 
-  const issue = await fetch(artifactURL(filename, "/staged-upload"), { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ size, sha256: digest }) });
+  const issue = await fetchWithRetry(artifactURL(filename, "/staged-upload"), { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ size, sha256: digest }), redirect: "error" },
+    { label: `staged upload issue for ${filename}` });
   if (issue.status === 404 || issue.status === 405) { await issue.body?.cancel(); return false; }
   if (!issue.ok) { await issue.body?.cancel(); throw new Error(`staged upload issue failed for ${filename} (${issue.status})`); }
   const { url, headers = {} } = await issue.json();
