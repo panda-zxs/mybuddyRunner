@@ -37,6 +37,32 @@ Desktop 的最终安装包版本由已冻结任务计划写入：UI 版本来自
 - 源码/依赖下载最多尝试 4 次，每次最长 5 分钟、总体最多 10 分钟；计划请求每次 30 秒、总体 2 分钟。只重试暂时性网络/服务端故障，认证失败不重试；拒绝重定向，下载写入临时文件后再替换。摘要验证发生在重试之外，不重试校验失败。
 - 不自动提高 Rust 编译并发；收集耗时和内存数据后再调整。首次缓存填充仍需冷编译，实际收益需后续 Actions 运行验证。
 
+## macOS 签名或公证长时间等待
+
+Desktop 的 `darwin-x64` 使用 `macos-15-intel` 原生 Intel Runner，
+`darwin-arm64` 使用 `macos-14` ARM Runner，避免 Intel 安装包的原生依赖、
+字节码编译和签名走跨架构路径；已完成的 Core 仍按原规则复用。
+Runner 标签与架构对应关系见 [GitHub 官方说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
+
+macOS 使用当前 job 的临时钥匙串，解锁有效期设为 6 小时，并通过
+`CSC_KEYCHAIN` 明确传给 electron-builder；Build Desktop 前再次解锁。
+随后用同一证书签名临时探针并请求 Apple 时间戳，3 分钟内确认私钥访问和
+时间戳服务可用，再开始完整打包；失败立即停止并保留该步骤日志。
+结束时清理证书、钥匙串和公证私钥。设置参考
+[GitHub 的证书安装说明](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)。
+
+`Build Desktop` 的最后一条 `signing` 日志不能单独判断卡在签名：
+electron-builder 也可能已经签完并在等待 Apple 公证。
+Runner 开启 `electron-osx-sign` 日志，并每分钟输出当前构建进程树中
+`codesign`、`notarytool`、`stapler` 等进程的名称、运行时间和 CPU；
+不输出进程参数、环境变量或公证凭据。
+macOS 构建最多 45 分钟，超时终止整个构建进程组并报失败；
+GitHub step 的 50 分钟限制提供外层兜底。Windows/Linux 执行方式保持原样。
+
+当前运行和 GitHub 的 Re-run 使用原 workflow revision。要采用修复后的
+Runner，需要把该 revision 合入配置的 Runner ref 后，从 Pilot/Update Server
+重新派发任务；可复用的 Core 和已完成目标仍按原计划规则复用。
+
 ## 本地校验
 
 ```bash

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 const targetDefinitions = {
   "darwin-arm64": { coreOS: "macos-14", desktopOS: "macos-14", rustTarget: "aarch64-apple-darwin", binary: "mybuddy-core", platform: "darwin", arch: "arm64", desktopCommand: "node scripts/build-with-builder.js arm64 --mac --arm64" },
-  "darwin-x64": { coreOS: "macos-14", desktopOS: "macos-14", rustTarget: "x86_64-apple-darwin", binary: "mybuddy-core", platform: "darwin", arch: "x64", desktopCommand: "node scripts/build-with-builder.js x64 --mac --x64" },
+  "darwin-x64": { coreOS: "macos-14", desktopOS: "macos-15-intel", rustTarget: "x86_64-apple-darwin", binary: "mybuddy-core", platform: "darwin", arch: "x64", desktopCommand: "node scripts/build-with-builder.js x64 --mac --x64" },
   "windows-x64": { coreOS: "windows-2022", desktopOS: "windows-2022", rustTarget: "x86_64-pc-windows-msvc", binary: "mybuddy-core.exe", platform: "win32", arch: "x64", rustflags: "-C target-feature=+crt-static", desktopCommand: "node scripts/build-with-builder.js x64 --win --x64" },
   "windows-arm64": { coreOS: "windows-11-arm", desktopOS: "windows-11-arm", rustTarget: "aarch64-pc-windows-msvc", binary: "mybuddy-core.exe", platform: "win32", arch: "arm64", rustflags: "-C target-feature=+crt-static", desktopCommand: "node scripts/build-with-builder.js arm64 --win --arm64" },
   "linux-x64": { coreOS: "ubuntu-22.04", desktopOS: "ubuntu-latest", rustTarget: "x86_64-unknown-linux-gnu", binary: "mybuddy-core", platform: "linux", arch: "x64", desktopCommand: "node scripts/build-with-builder.js x64 --linux --x64" },

@@ -178,6 +178,13 @@ jobs:
         with:
           node-version: 24
           architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - name: Verify native macOS Desktop runner
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          node -e 'console.log(`Desktop architecture: host=${process.arch}, target=${process.env.EXPECTED_ARCH}`); if (process.arch !== process.env.EXPECTED_ARCH) { console.error("::error::macOS Desktop requires a runner matching the target architecture"); process.exit(1); }'
       - name: Fingerprint Desktop update configuration
         id: update-config
         shell: bash
@@ -325,6 +332,7 @@ jobs:
           TASK_CORE_BINARY: ${{ env.CORE_BINARY }}
       - name: Setup macOS code signing (macOS only)
         if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
+        timeout-minutes: 5
         shell: bash
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -332,16 +340,22 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'temp-keychain-password' }}
         run: |
           if [ -n "$BUILD_CERTIFICATE_BASE64" ]; then
+            umask 077
+            KEYCHAIN_PATH="$RUNNER_TEMP/mybuddy-signing.keychain-db"
+            trap 'rm -f "$RUNNER_TEMP/certificate.p12"' EXIT
             printf '%s' "$BUILD_CERTIFICATE_BASE64" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/certificate.p12" \
               || { echo "::error::BUILD_CERTIFICATE_BASE64 不是合法 base64，请重贴：base64 -i 证书.p12 | tr -d '\\n'"; exit 1; }
             [ "$(head -c 2 "$RUNNER_TEMP/certificate.p12" | xxd -p)" = "3082" ] \
               || { echo "::error::解码结果不是 PKCS#12(DER) 文件，secret 内容贴错了"; exit 1; }
-            security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-            security default-keychain -s build.keychain
-            security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-            security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security show-keychain-info "$KEYCHAIN_PATH"
+            security default-keychain -s "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
             rm -f "$RUNNER_TEMP/certificate.p12"
+            echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
             echo "MYBUDDY_MAC_RELEASE_SIGNING=1" >> "$GITHUB_ENV"
             echo "Certificate imported; release signing enabled"
           else
@@ -362,10 +376,35 @@ jobs:
             echo "NOTARY_API_KEY_PATH=$RUNNER_TEMP/notary-key.p8" >> "$GITHUB_ENV"
             echo "Notary API key prepared"
           fi
+      - name: Verify macOS signing before Desktop build
+        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true' && env.MYBUDDY_MAC_RELEASE_SIGNING == '1'
+        timeout-minutes: 3
+        shell: bash
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'temp-keychain-password' }}
+          SIGNING_IDENTITY: ${{ secrets.IDENTITY }}
+        run: |
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$CSC_KEYCHAIN"
+          test -n "$SIGNING_IDENTITY" || { echo "::error::IDENTITY is required for release signing"; exit 1; }
+          SIGNING_PROBE="$RUNNER_TEMP/mybuddy-signing-probe"
+          trap 'rm -f "$SIGNING_PROBE"' EXIT
+          cp /usr/bin/true "$SIGNING_PROBE"
+          echo "Checking private key access and Apple timestamp service (3 minute limit)"
+          codesign --force --sign "$SIGNING_IDENTITY" --keychain "$CSC_KEYCHAIN" --timestamp --options runtime "$SIGNING_PROBE"
+          codesign --verify --strict "$SIGNING_PROBE"
+          echo "Signing preflight passed"
       - name: Build Desktop
         if: steps.packaged.outputs.cache-hit != 'true'
+        timeout-minutes: ${{ runner.os == 'macOS' && 50 || 120 }}
         shell: bash
-        run: cd "$SOURCE_DIR" && ${{ matrix.desktopCommand }}
+        run: |
+          cd "$SOURCE_DIR"
+          if [ "$RUNNER_OS" = macOS ]; then
+            export DEBUG=electron-osx-sign
+            node "$GITHUB_WORKSPACE/scripts/build-progress.mjs" ${{ matrix.desktopCommand }}
+          else
+            ${{ matrix.desktopCommand }}
+          fi
         env:
           MYBUDDY_FEEDBACK_BASE_URL: ${{ matrix.platform != 'linux' && format('{0}/releases/{1}', secrets.MYBUDDY_UPDATE_SERVER_URL, inputs.channel) || '' }}
           MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS }}
@@ -421,3 +460,12 @@ jobs:
         run: node scripts/upload.mjs desktop "${{ matrix.target }}" desktop-dist
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
+      - name: Clean up macOS signing material
+        if: always() && runner.os == 'macOS'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary-key.p8"
+          if [ -f "$RUNNER_TEMP/mybuddy-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/mybuddy-signing.keychain-db"
+          fi
