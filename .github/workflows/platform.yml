@@ -52,12 +52,33 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-node@v6
         with: { node-version: 24 }
+      - name: Check already registered task-bound Core
+        id: uploaded
+        timeout-minutes: 2
+        run: node scripts/reuse-core.mjs "${{ matrix.target }}"
+        env:
+          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Restore packaged Core files
-        id: packaged
+        if: steps.uploaded.outputs.available != 'true'
+        id: core-cache
         uses: actions/cache/restore@v4
         with:
           path: dist
           key: core-package-v1-${{ env.TASK_ID }}-${{ matrix.target }}-${{ inputs.core_commit }}-${{ hashFiles('.github/workflows/platform.yml', 'scripts/**') }}
+      - name: Resolve Core package availability
+        id: packaged
+        shell: bash
+        env:
+          REMOTE_AVAILABLE: ${{ steps.uploaded.outputs.available }}
+          CACHE_HIT: ${{ steps.core-cache.outputs.cache-hit }}
+          CACHE_KEY: ${{ steps.core-cache.outputs.cache-primary-key }}
+        run: |
+          if [ "$REMOTE_AVAILABLE" = true ] || [ "$CACHE_HIT" = true ]; then
+            echo "cache-hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache-hit=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "cache-primary-key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
       - name: Download frozen Core source
         if: steps.packaged.outputs.cache-hit != 'true'
         run: node scripts/download.mjs source core core-source.zip
@@ -152,6 +173,7 @@ jobs:
           path: dist
           key: ${{ steps.packaged.outputs.cache-primary-key }}
       - name: Upload Core package to Update Server
+        if: steps.uploaded.outputs.available != 'true'
         run: node scripts/upload.mjs core "${{ matrix.target }}" dist
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
