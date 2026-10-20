@@ -5,8 +5,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
+const SUMMARY_RESERVE_BYTES = 4 * 1024;
 const MAX_LOG_BYTES = 256 * 1024;
 const MAX_OUTPUT_BYTES = 128 * 1024;
+const RETRY_DELAYS_MS = [5_000, 15_000, 30_000, 45_000, 60_000];
 
 function text(value) {
   return value === undefined || value === null ? "" : String(value);
@@ -52,14 +54,19 @@ function appendBounded(path, line, options) {
   return true;
 }
 
-function retryable(result) {
+function failureReason(result) {
   const output = `${text(result.stdout)}\n${text(result.stderr)}`;
   // EX_DATAERR / 65 alone also covers corrupt or mismatched tickets. Never
   // interpret it as a transient error, and let explicit integrity failures win
   // over any accompanying networking text.
-  if (/could not validate (?:the )?ticket|ticket[^\n]*(?:invalid|revoked)|(?:invalid|bad|mismatch(?:ed)?)[^\n]*(?:signature|cdhash)|(?:signature|cdhash)[^\n]*(?:invalid|mismatch)|certificate[^\n]*(?:invalid|revoked|expired)|trust (?:evaluation|validation)[^\n]*fail|permission denied|operation not permitted|no such file|(?:file|path)[^\n]*(?:not found|does not exist)|unsupported file/i.test(output)) return false;
-  return Boolean(result.timedOut)
-    || /(?:NSURLErrorDomain[^\n]*Code\s*=\s*-(?:1001|1003|1004|1005|1006|1009)\b|(?:request|connection|operation) timed out|network connection (?:was )?lost|could not connect to (?:the )?server|cannot connect to (?:the )?server|connection (?:reset|refused)|network is unreachable|(?:cloudkit|server|service)[^\n]*(?:temporarily unavailable|unavailable \(503\))|record not found|no record found|recordnotfound)/i.test(output);
+  if (/could not validate (?:the )?ticket|does not have a ticket stapled|ticket[^\n]*(?:invalid|revoked)|(?:invalid|bad|mismatch(?:ed)?)[^\n]*(?:signature|cdhash)|(?:signature|cdhash)[^\n]*(?:invalid|mismatch)|certificate[^\n]*(?:invalid|revoked|expired)|trust (?:evaluation|validation)[^\n]*fail|permission denied|operation not permitted|no such file|(?:file|path)[^\n]*(?:not found|does not exist)|unsupported file/i.test(output)) return { reason: "permanent" };
+  if (result.timedOut) return { reason: "timeout" };
+  const networkCode = output.match(/NSURLErrorDomain[^\n]*Code\s*=\s*(-(?:1001|1003|1004|1005|1006|1009))\b/i)?.[1];
+  if (networkCode || /(?:request|connection|operation) timed out|network connection (?:was )?lost|could not connect to (?:the )?server|cannot connect to (?:the )?server|connection (?:reset|refused)|network is unreachable|(?:cloudkit|server|service)[^\n]*(?:temporarily unavailable|unavailable \(503\))/i.test(output)) {
+    return { reason: "network", ...(networkCode ? { networkCode: Number(networkCode) } : {}) };
+  }
+  if (/record not found|no record found|recordnotfound/i.test(output)) return { reason: "ticket_missing" };
+  return { reason: "unknown" };
 }
 
 function validArguments(action, args) {
@@ -82,17 +89,18 @@ export async function runStapler(action, args, {
   append = appendBounded,
   stdout = value => process.stdout.write(value),
   stderr = value => process.stderr.write(value),
-  budgetMs = action === "staple" ? 210_000 : 60_000,
+  budgetMs = action === "staple" ? 240_000 : 90_000,
   attemptTimeoutMs = action === "staple" ? 45_000 : 60_000,
-  maxAttempts = action === "staple" ? 3 : 1,
+  maxAttempts = action === "staple" ? 6 : 3,
 } = {}) {
   if (!validArguments(action, args)) {
     stderr("[stapler] Expected staple|validate [ -v|-q ] <artifact path>; unsupported arguments.\n");
     return 64;
   }
-  const budget = Math.max(1, Math.min(Number(budgetMs) || 1, action === "staple" ? 210_000 : 60_000));
+  // Leave room below the existing desktop hooks' 300s / 120s parent timeouts.
+  const budget = Math.max(1, Math.min(Number(budgetMs) || 1, action === "staple" ? 240_000 : 90_000));
   const timeout = Math.max(1, Math.min(Number(attemptTimeoutMs) || 1, action === "staple" ? 45_000 : 60_000));
-  const attempts = action === "staple" ? Math.max(1, Math.min(Math.floor(Number(maxAttempts) || 1), 3)) : 1;
+  const attempts = Math.max(1, Math.min(Math.floor(Number(maxAttempts) || 1), action === "staple" ? 6 : 3));
   const started = now();
   let loggedBytes = 0, diagnosticUnavailable = false, lastCode = 1;
   const log = entry => {
@@ -102,7 +110,13 @@ export async function runStapler(action, args, {
     const safe = { action, elapsedMs: Math.max(0, now() - started), ...entry };
     if (safe.stdout) safe.stdout = truncate(redact(safe.stdout, env), 6_000);
     if (safe.stderr) safe.stderr = truncate(redact(safe.stderr, env), 6_000);
-    const line = JSON.stringify(safe) + "\n";
+    let line = JSON.stringify(safe) + "\n";
+    if (loggedBytes + Buffer.byteLength(line) > MAX_DIAGNOSTIC_BYTES - SUMMARY_RESERVE_BYTES && (safe.stdout || safe.stderr)) {
+      delete safe.stdout;
+      delete safe.stderr;
+      safe.outputOmitted = true;
+      line = JSON.stringify(safe) + "\n";
+    }
     if (loggedBytes + Buffer.byteLength(line) > MAX_DIAGNOSTIC_BYTES) return;
     try {
       if (append(env.MYBUDDY_STAPLER_LOG, line, { encoding: "utf8", mode: 0o600 }) === false) {
@@ -150,17 +164,28 @@ export async function runStapler(action, args, {
     const safeStderr = truncate(redact(result?.stderr, env), MAX_OUTPUT_BYTES);
     if (safeStdout) stdout(safeStdout);
     if (safeStderr) stderr(safeStderr);
-    const transient = action === "staple" && lastCode !== 0 && retryable(result || {});
+    const failure = lastCode === 0 ? { reason: "native_success" } : failureReason(result || {});
+    const transient = lastCode !== 0 && (
+      ["network", "timeout"].includes(failure.reason)
+      || action === "staple" && failure.reason === "ticket_missing"
+    );
+    // A missing record can also mean a CDHash mismatch, so only networking
+    // failures get the longer retry window.
+    const attemptLimit = failure.reason === "ticket_missing" ? Math.min(attempts, 3) : attempts;
+    if (lastCode !== 0) {
+      stderr(`[stapler] ${action} attempt ${attempt}/${attempts} failed: exit=${lastCode} reason=${failure.reason}${failure.networkCode ? ` networkCode=${failure.networkCode}` : ""}\n`);
+    }
     log({
       event: "attempt", attempt, exitCode: lastCode, timedOut: Boolean(result?.timedOut), transient,
+      ...failure,
       ...(result?.errorCode ? { errorCode: redact(text(result.errorCode).slice(0, 128), env) } : {}),
       stdout: safeStdout, stderr: safeStderr,
     });
-    if (lastCode === 0 || !transient || attempt === attempts) {
+    if (lastCode === 0 || !transient || attempt >= attemptLimit) {
       log({ event: "finished", reason: lastCode === 0 ? "native_success" : transient ? "retries_exhausted" : "native_failure", exitCode: lastCode });
       return lastCode;
     }
-    const backoff = attempt === 1 ? 5_000 : 15_000;
+    const backoff = RETRY_DELAYS_MS[attempt - 1];
     if (now() - started + backoff >= budget) {
       log({ event: "finished", reason: "budget_exhausted", exitCode: lastCode });
       return lastCode;

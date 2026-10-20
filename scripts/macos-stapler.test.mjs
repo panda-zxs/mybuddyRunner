@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runStapler } from "./macos-stapler.mjs";
@@ -26,6 +26,8 @@ function fixture(results, overrides = {}) {
   };
   return { calls, sleeps, lines, stdout, stderr, options, entries: () => lines.map(({ line }) => JSON.parse(line)) };
 }
+
+const lostConnection = 'Error Domain=NSURLErrorDomain Code=-1005 "The network connection was lost."\nCloudKit\'s response is inconsistent with expections: (null)\nThe staple and validate action failed! Error 68.\n';
 
 test("temporary Apple record lookup failure recovers without submitting, re-signing or changing arguments", async () => {
   const f = fixture([
@@ -79,13 +81,64 @@ test("known temporary network errors and native timeouts are retryable with boun
     assert.equal(await runStapler("staple", ["/tmp/a.dmg"], f.options), 0);
     assert.equal(f.calls.length, 2);
   }
-  const f = fixture(Array.from({ length: 3 }, () => ({ code: 1, timedOut: true, errorCode: "ETIMEDOUT", elapsedMs: 45_000 })), { maxAttempts: 99, budgetMs: 999_000, attemptTimeoutMs: 999_000 });
+  const f = fixture(Array.from({ length: 6 }, () => ({ code: 1, timedOut: true, errorCode: "ETIMEDOUT", elapsedMs: 45_000 })), { maxAttempts: 99, budgetMs: 999_000, attemptTimeoutMs: 999_000 });
   assert.equal(await runStapler("staple", ["/tmp/a.pkg"], f.options), 124);
+  assert.equal(f.calls.length, 4);
+  assert.deepEqual(f.sleeps, [5_000, 15_000, 30_000]);
+  assert.ok(f.calls.every(([, , opts]) => opts.timeout === 45_000));
+  assert.equal(f.entries()[0].budgetMs, 240_000);
+  assert.equal(f.entries()[0].maxAttempts, 6);
+  assert.equal(f.entries().at(-1).reason, "budget_exhausted");
+  assert.ok(f.entries().at(-1).elapsedMs <= 240_000);
+});
+
+test("the observed CloudKit error 68 can recover on the fourth attempt within the staple deadline", async () => {
+  const f = fixture([
+    ...Array.from({ length: 3 }, () => ({ code: 68, stdout: lostConnection, elapsedMs: 8_000 })),
+    { code: 0, stdout: "The staple and validate action worked!\n", elapsedMs: 8_000 },
+  ]);
+  assert.equal(await runStapler("staple", ["/tmp/My Buddy.app"], f.options), 0);
+  assert.equal(f.calls.length, 4);
+  assert.deepEqual(f.sleeps, [5_000, 15_000, 30_000]);
+  assert.equal(f.entries().at(-1).reason, "native_success");
+  assert.equal(f.entries().at(-1).elapsedMs, 82_000);
+});
+
+test("record-not-found retries remain limited to three, even with the longer network retry policy", async () => {
+  const f = fixture(Array.from({ length: 6 }, () => ({
+    code: 65, stdout: 'CloudKit query failed: "Record not found".\n',
+  })), { maxAttempts: 99 });
+  assert.equal(await runStapler("staple", ["/tmp/a.app"], f.options), 65);
   assert.equal(f.calls.length, 3);
   assert.deepEqual(f.sleeps, [5_000, 15_000]);
-  assert.ok(f.calls.every(([, , opts]) => opts.timeout === 45_000));
-  assert.equal(f.entries()[0].budgetMs, 210_000);
   assert.equal(f.entries().at(-1).reason, "retries_exhausted");
+});
+
+test("a permanent failure after a network error stops retrying and retains its native exit status", async () => {
+  const f = fixture([
+    { code: 68, stdout: lostConnection },
+    { code: 65, stderr: "Could not validate ticket. CDHash mismatch. Request timed out." },
+    { code: 0 },
+  ]);
+  assert.equal(await runStapler("staple", ["/tmp/a.app"], f.options), 65);
+  assert.equal(f.calls.length, 2);
+  assert.deepEqual(f.sleeps, [5_000]);
+  assert.equal(f.entries().at(-1).reason, "native_failure");
+});
+
+test("an unexplained exit 68 is not assumed to be a temporary network failure", async () => {
+  for (const action of ["staple", "validate"]) {
+    for (const stdout of [
+      "The staple and validate action failed! Error 68.",
+      "Error Domain=NSURLErrorDomain Code=-1200 \"An SSL error has occurred and a secure connection to the server cannot be made.\"",
+    ]) {
+      const f = fixture([{ code: 68, stdout }]);
+      assert.equal(await runStapler(action, ["/tmp/a.app"], f.options), 68);
+      assert.equal(f.calls.length, 1);
+      assert.deepEqual(f.sleeps, []);
+      assert.equal(f.entries().at(-1).reason, "native_failure");
+    }
+  }
 });
 
 test("wall clock budget bounds retries and preserves the last native failure", async () => {
@@ -100,15 +153,72 @@ test("wall clock budget bounds retries and preserves the last native failure", a
   assert.equal(timed.calls[1][2].timeout, 2_000);
 });
 
-test("validate retains native output/status, never retries, and has its own shorter deadline", async () => {
+test("validate retains native output/status and does not retry permanent failures", async () => {
   for (const code of [0, 65]) {
-    const f = fixture([{ code, stdout: "validate stdout\n", stderr: "Request timed out\n" }], { maxAttempts: 9, budgetMs: 999_000, attemptTimeoutMs: 999_000 });
+    const f = fixture([{ code, stdout: "validate stdout\n", stderr: "Could not validate ticket\n" }], { maxAttempts: 9, budgetMs: 999_000, attemptTimeoutMs: 999_000 });
     assert.equal(await runStapler("validate", ["/tmp/a.app"], f.options), code);
     assert.equal(f.calls.length, 1);
     assert.deepEqual(f.sleeps, []);
     assert.equal(f.calls[0][2].timeout, 60_000);
     assert.equal(f.stdout.join(""), "validate stdout\n");
-    assert.equal(f.stderr.join(""), "Request timed out\n");
+    assert.match(f.stderr.join(""), /Could not validate ticket/);
+    assert.equal(f.entries()[0].budgetMs, 90_000);
+    assert.equal(f.entries()[0].maxAttempts, 3);
+  }
+  for (const stdout of [
+    "MyBuddy.app does not have a ticket stapled to it.",
+    'CloudKit query failed: "Record not found".',
+    "Ticket is revoked",
+  ]) {
+    const f = fixture([{ code: 65, stdout }]);
+    assert.equal(await runStapler("validate", ["/tmp/a.app"], f.options), 65);
+    assert.equal(f.calls.length, 1);
+    assert.deepEqual(f.sleeps, []);
+  }
+});
+
+test("validate retries a network failure and still requires the native validator to succeed", async () => {
+  const f = fixture([{ code: 68, stdout: lostConnection }, { code: 0, stdout: "The validate action worked!\n" }]);
+  assert.equal(await runStapler("validate", ["/tmp/a.app"], f.options), 0);
+  assert.equal(f.calls.length, 2);
+  assert.deepEqual(f.sleeps, [5_000]);
+  assert.ok(f.calls.every(([, args]) => args[1] === "validate"));
+  assert.equal(f.entries().at(-1).reason, "native_success");
+});
+
+test("validate network retries stop at three attempts and include waits in the 90-second budget", async () => {
+  const f = fixture(Array.from({ length: 5 }, () => ({ code: 68, stdout: lostConnection })), { maxAttempts: 99, budgetMs: 999_000 });
+  assert.equal(await runStapler("validate", ["/tmp/a.app"], f.options), 68);
+  assert.equal(f.calls.length, 3);
+  assert.deepEqual(f.sleeps, [5_000, 15_000]);
+  assert.equal(f.entries().at(-1).reason, "retries_exhausted");
+  const timed = fixture([
+    { code: 68, stdout: lostConnection, elapsedMs: 60_000 },
+    { code: 68, stdout: lostConnection, elapsedMs: 25_000 },
+  ], { budgetMs: 999_000, attemptTimeoutMs: 999_000 });
+  assert.equal(await runStapler("validate", ["/tmp/a.app"], timed.options), 68);
+  assert.equal(timed.calls.length, 2);
+  assert.deepEqual(timed.sleeps, [5_000]);
+  assert.deepEqual(timed.calls.map(([, , opts]) => opts.timeout), [60_000, 25_000]);
+  assert.equal(timed.entries().at(-1).reason, "budget_exhausted");
+  assert.equal(timed.entries().at(-1).elapsedMs, 90_000);
+});
+
+test("failure summaries expose native code and network classification without requiring verbose JSONL", async () => {
+  const f = fixture(Array.from({ length: 6 }, () => ({ code: 68, stdout: lostConnection })));
+  assert.equal(await runStapler("staple", ["/tmp/a.app"], f.options), 68);
+  assert.equal(f.calls.length, 6);
+  assert.deepEqual(f.sleeps, [5_000, 15_000, 30_000, 45_000, 60_000]);
+  const summaries = f.stderr.join("");
+  assert.match(summaries, /\[stapler\]/);
+  assert.match(summaries, /exit=68/);
+  assert.match(summaries, /reason=network/);
+  assert.match(summaries, /networkCode=-1005/);
+  assert.equal(f.entries().at(-1).reason, "retries_exhausted");
+  assert.ok(f.entries().at(-1).elapsedMs <= 240_000);
+  for (const entry of f.entries().filter(entry => entry.event === "attempt")) {
+    assert.equal(entry.exitCode, 68);
+    assert.equal(entry.transient, true);
   }
 });
 
@@ -120,10 +230,10 @@ test("diagnostics are bounded JSONL and omit arguments, credentials and unrelate
     API_TOKEN: "api-secret",
     UNRELATED_VARIABLE: "never-log-the-environment",
   };
-  const f = fixture(Array.from({ length: 3 }, () => ({
+  const f = fixture(Array.from({ length: 6 }, () => ({
     code: 68,
     stdout: `the-apple-secret key-secret api-secret Authorization: Bearer unknown-secret https://example.com/?token=url-secret\n${"签名".repeat(70_000)}`,
-    stderr: "Request timed out\npassword=inline-secret\n",
+    stderr: `Request timed out\npassword=inline-secret\n${"网络".repeat(70_000)}`,
   })), { env });
   assert.equal(await runStapler("staple", ["/private/do-not-log-this-argument.app"], f.options), 68);
   const log = f.lines.map(({ line }) => line).join("");
@@ -134,6 +244,7 @@ test("diagnostics are bounded JSONL and omit arguments, credentials and unrelate
   assert.doesNotMatch([...f.stdout, ...f.stderr].join(""), /the-apple-secret|key-secret|api-secret|unknown-secret|url-secret|inline-secret/);
   assert.match(log, /REDACTED/);
   assert.match(log, /output truncated/);
+  assert.equal(f.entries().filter(entry => entry.event === "attempt").length, 6);
   assert.equal(f.entries().at(-1).reason, "retries_exhausted");
 });
 
@@ -179,6 +290,28 @@ test("diagnostic file is bounded across repeated invocations", async () => {
   }
 });
 
+test("large six-attempt diagnostics retain the final event in a real bounded file", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "stapler-large-log-"));
+  const path = join(dir, "stapler.jsonl");
+  try {
+    const f = fixture(Array.from({ length: 6 }, () => ({
+      code: 68,
+      stdout: lostConnection + "签名".repeat(70_000),
+      stderr: "CloudKit network connection was lost\n" + "网络".repeat(70_000),
+    })), { env: { MYBUDDY_STAPLER_LOG: path }, append: undefined });
+    assert.equal(await runStapler("staple", ["/tmp/a.app"], f.options), 68);
+    assert.ok(statSync(path).size <= 64 * 1024);
+    assert.ok(statSync(path).size <= 256 * 1024);
+    const entries = readFileSync(path, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(entries.filter(entry => entry.event === "attempt").length, 6);
+    assert.equal(entries.at(-1).event, "finished");
+    assert.equal(entries.at(-1).reason, "retries_exhausted");
+    assert.equal(entries.at(-1).exitCode, 68);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("redaction precedes truncation so a credential spanning the output limit cannot leak its prefix", async () => {
   const secret = "sensitive-prefix-that-must-never-appear-in-output";
   const f = fixture([{ code: 65, stdout: " ".repeat(128 * 1024 - 12) + secret }], {
@@ -191,7 +324,7 @@ test("redaction precedes truncation so a credential spanning the output limit ca
 
 test("launch errors, signals and malformed native results never become success", async () => {
   for (const result of [{ code: 0, signal: "SIGKILL" }, { code: 0, timedOut: true }, { code: 0, errorCode: "ENOENT" }, {}, { code: -1 }]) {
-    const f = fixture([result]);
+    const f = fixture([result], { maxAttempts: 1 });
     assert.notEqual(await runStapler("validate", ["/tmp/a.app"], f.options), 0);
   }
   const f = fixture([], { execute: async () => { throw Object.assign(new Error("hidden launch details"), { code: "ENOENT" }); } });
