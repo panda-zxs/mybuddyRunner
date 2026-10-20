@@ -175,3 +175,16 @@ test("platform jobs preserve exact package caches and per-platform dependencies"
   assert.ok(platformWorkflow.indexOf('Save packaged Desktop files before upload') < platformWorkflow.indexOf('Reuse already uploaded task artifacts'));
   assert.match(platformWorkflow, /Reuse already uploaded task artifacts\n        run:/);
 });
+
+test("captures macOS stapler diagnostics even when the source hook buffers its error", () => {
+  const build = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Build Desktop"),
+    platformWorkflow.indexOf("      - name: Show macOS stapler diagnostics"));
+  assert.match(build, /if \[ "\$RUNNER_OS" = macOS \]; then[\s\S]*install -m 755.*scripts\/macos-tools\/xcrun/);
+  assert.ok(build.indexOf('export PATH="$RUNNER_TEMP/mybuddy-macos-tools:$PATH"')
+    < build.indexOf('scripts/build-progress.mjs'));
+  const diagnostics = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Show macOS stapler diagnostics"),
+    platformWorkflow.indexOf("      - name: Collect Desktop artifacts"));
+  assert.match(diagnostics, /if: always\(\) && runner.os == 'macOS'/);
+  assert.match(diagnostics, /cat "\$RUNNER_TEMP\/mybuddy-macos-tools\/stapler.jsonl"/);
+  assert.doesNotMatch(build + diagnostics, /continue-on-error:|NODE_OPTIONS:.*require|afterSign\.js|notarytool.*submit/);
+});

@@ -423,6 +423,14 @@ jobs:
           cd "$SOURCE_DIR"
           if [ "$RUNNER_OS" = macOS ]; then
             export DEBUG=electron-osx-sign
+            # Source hooks buffer stapler stderr. Keep diagnostics independently
+            # of that buffer and retry temporary failures within their timeout.
+            install -d -m 700 "$RUNNER_TEMP/mybuddy-macos-tools"
+            install -m 755 "$GITHUB_WORKSPACE/scripts/macos-tools/xcrun" "$RUNNER_TEMP/mybuddy-macos-tools/xcrun"
+            export MYBUDDY_STAPLER_NODE="$(command -v node)"
+            export MYBUDDY_STAPLER_HELPER="$GITHUB_WORKSPACE/scripts/macos-stapler.mjs"
+            export MYBUDDY_STAPLER_LOG="$RUNNER_TEMP/mybuddy-macos-tools/stapler.jsonl"
+            export PATH="$RUNNER_TEMP/mybuddy-macos-tools:$PATH"
             node "$GITHUB_WORKSPACE/scripts/build-progress.mjs" ${{ matrix.desktopCommand }}
           else
             ${{ matrix.desktopCommand }}
@@ -450,6 +458,17 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.TEAM_ID }}
           CI: "true"
+      - name: Show macOS stapler diagnostics
+        if: always() && runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/mybuddy-macos-tools/stapler.jsonl" ]; then
+            echo "Apple stapler results (notary Accepted and local ticket attachment are separate stages):"
+            cat "$RUNNER_TEMP/mybuddy-macos-tools/stapler.jsonl"
+          else
+            echo "No stapler result recorded; inspect the preceding build stage."
+          fi
       - name: Collect Desktop artifacts
         if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash

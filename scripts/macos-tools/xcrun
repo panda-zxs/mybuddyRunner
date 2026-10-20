@@ -1,0 +1,10 @@
+#!/bin/bash
+set -eu
+
+# Only these two operations need Runner diagnostics and bounded retries.
+# Pass notarytool (which may carry credentials) and all SDK lookups untouched.
+if [ "${1-}" = stapler ] && { [ "${2-}" = staple ] || [ "${2-}" = validate ]; }; then
+  shift
+  exec "${MYBUDDY_STAPLER_NODE:?}" "${MYBUDDY_STAPLER_HELPER:?}" "$@"
+fi
+exec /usr/bin/xcrun "$@"

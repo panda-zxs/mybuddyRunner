@@ -68,6 +68,28 @@ Runner，需要把该 revision 合入配置的 Runner ref 后，从 Pilot/Update
 连接超时及临时服务错误最多尝试 4 次；权限错误、制品冲突和缺失结果
 交给原有校验处理。重试恢复缓存后仍会与任务已登记制品核对，保持相同字节。
 
+### 公证 Accepted 后 stapler 失败
+
+Apple 返回 `Accepted` 表示公证通过，随后 `stapler staple` 还需要获取并附加
+公证票据；这两个步骤分别可能失败，见
+[Apple 公证流程说明](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)。
+如果日志已出现 `Accepted`，随后报 `xcrun stapler staple` 失败，
+应查看票据操作的错误，而不是直接判定签名失败或重新提交公证。
+旧客户端构建脚本的 “App notarization has not completed” 只是本地票据
+校验失败后的笼统提示，不能推翻 Apple 的 `Accepted` 结果。
+
+Runner 在 macOS Desktop 构建期间为 `xcrun stapler staple/validate` 添加薄包装，
+把原生退出码和输出记录到 Runner 临时目录；无论构建成功或失败，后续
+`Show macOS stapler diagnostics` 步骤都会输出这些记录，避免被客户端钩子
+缓冲输出后丢失。其他 `xcrun` 命令直接交给 `/usr/bin/xcrun`，不记录公证凭据。
+
+仅 `staple` 的明确临时网络故障、超时或票据暂未找到会有限重试：
+最多 3 次、每次最长 45 秒、总体不超过 210 秒。
+单独的退出码 65、票据验证失败、证书信任及权限等错误不会被视为可重试；
+`validate` 只执行一次，最多 60 秒。重试耗尽仍报失败，保留原有票据、
+签名和 Gatekeeper 验证要求。该处理覆盖 `.app` 和 `.dmg` 的票据操作，
+不改冻结的客户端源码，也不自动重新签名或重新提交公证。
+
 ## 本地校验
 
 ```bash
