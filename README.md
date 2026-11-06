@@ -40,9 +40,9 @@ Desktop 的最终安装包版本由已冻结任务计划写入：UI 版本来自
 
 ## macOS 签名或公证长时间等待
 
-Desktop 的 `darwin-x64` 使用 `macos-15-intel` 原生 Intel Runner，
-`darwin-arm64` 使用 `macos-14` ARM Runner，避免 Intel 安装包的原生依赖、
-字节码编译和签名走跨架构路径；已完成的 Core 仍按原规则复用。
+Core 和 Desktop 的 `darwin-x64` 均使用 `macos-15-intel` 原生 Intel Runner，
+`darwin-arm64` 均使用 `macos-15` ARM Runner，使 Rust 编译、安装包的原生依赖、
+字节码编译和签名使用对应架构；已完成的 Core 仍按原规则复用。
 Runner 标签与架构对应关系见 [GitHub 官方说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
 
 macOS 使用当前 job 的临时钥匙串，解锁有效期设为 6 小时，并通过
