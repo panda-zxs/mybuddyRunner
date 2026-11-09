@@ -1,0 +1,31 @@
+{
+  "version": "0.3.6",
+  "commit": "93b817501e0b9fa04fba155face2630bfcd0322e",
+  "repository": "iFurySt/open-codex-computer-use",
+  "artifacts": {
+    "darwin-x64": {
+      "name": "Open-Computer-Use-0.3.6-macOS-universal.app.zip",
+      "sha256": "e9f60d9b132914cb2620f430d3565e72927152ed9f02524c30ab43ad9880cd1c"
+    },
+    "darwin-arm64": {
+      "name": "Open-Computer-Use-0.3.6-macOS-universal.app.zip",
+      "sha256": "e9f60d9b132914cb2620f430d3565e72927152ed9f02524c30ab43ad9880cd1c"
+    },
+    "win32-x64": {
+      "name": "open-computer-use-cli-0.3.6-windows-amd64.zip",
+      "sha256": "c8c9374053e2ed30f52133c482f0f5d4d0c18828977b18475f791941ba737bba"
+    },
+    "win32-arm64": {
+      "name": "open-computer-use-cli-0.3.6-windows-arm64.zip",
+      "sha256": "7aa8cd523ad286b8f9eac6d1390da2e662e034a865ea2c7f99830eed1e8e3d56"
+    },
+    "linux-x64": {
+      "name": "open-computer-use-cli-0.3.6-linux-amd64.tar.gz",
+      "sha256": "e58246799c9d4ae89d8e3af2bcc37052fdf56133d1ecc053a0e5bfc70b3d594c"
+    },
+    "linux-arm64": {
+      "name": "open-computer-use-cli-0.3.6-linux-arm64.tar.gz",
+      "sha256": "1ee6a84f00d9023da186c9cb3323ed6ae06ef0ed18bb8f9b4c4e6fcab45b020a"
+    }
+  }
+}

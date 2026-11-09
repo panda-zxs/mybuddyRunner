@@ -37,6 +37,8 @@ Desktop 的最终安装包版本由已冻结任务计划写入：UI 版本来自
 - Desktop 包下载（Bun/npm）与 Electron 工具下载分开缓存；按宿主系统、架构、目标和依赖版本隔离。仍执行 frozen-lockfile 安装，不缓存 node_modules。
 - Bun 优先从 GitHub 安装；失败后使用官方 npm `@oven/bun-*` 原生二进制包备用下载路径，Windows ARM64 固定 1.4.2，其他平台固定 1.3.5。备用安装按宿主架构选择，禁用安装脚本，由 npm 校验包完整性并限制重试和总耗时；通过版本与架构检查后才加入 PATH，同时提供 bun/bunx。任一路径安装后均再次检查实际执行版本；两条路径都失败则停止打包。该安装方式使用 Bun [官方支持的 npm 分发渠道](https://bun.sh/docs/installation)。
 - Computer Use 在编译前按冻结源码中的版本、目标和 SHA-256 预下载；Release 地址暂时失败时切换官方 GitHub Release Asset API，摘要不符立即停止。校验后的原始归档单独跨任务缓存，并在后续编译或签名失败前保存；缓存命中仍校验摘要。只写入现有打包脚本识别的 `out/.computer-use-cache`，不改冻结源码或跳过组件校验。API 路径也失败时停止，绝不输出缺少组件的安装包。
+- GitHub API 下载仅在预下载步骤使用内置的只读 `github.token`，不传给客户端源码、CDN 或其他站点。显式处理重定向并刷新签名下载地址，CDN 403 可重新获取一次地址；API 权限错误立即停止，限流只在短等待预算内重试。失败日志包含域名、认证方式和限流计数，不包含令牌或签名 URL。
+- 视频编码器 FFmpeg 也在编译前准备并缓存。`scripts/video-tools-release.json` 固定官方 b6.1.1 的压缩包、解压后二进制、LICENSE 与 README 摘要；源码版本不匹配时停止。Windows ARM64 沿用源码规定的 x64 编码器。准备结果写入既有 `resources/video-tools/<platform>-<arch>` 格式，原打包钩子复核后无需联网。
 - 源码/依赖下载最多尝试 4 次，每次最长 5 分钟、总体最多 10 分钟；计划请求每次 30 秒、总体 2 分钟。只重试暂时性网络/服务端故障，认证失败不重试；拒绝重定向，下载写入临时文件后再替换。摘要验证发生在重试之外，不重试校验失败。
 - 不自动提高 Rust 编译并发；收集耗时和内存数据后再调整。首次缓存填充仍需冷编译，实际收益需后续 Actions 运行验证。
 
@@ -108,5 +110,9 @@ Runner 对明确临时网络故障和超时进行有限重试：
 ```bash
 npm test
 ```
+
+`native-downloads.yml` 还会在 macOS ARM64/Intel、Windows ARM64/x64 Runner 上检查真实下载：
+强制模拟 Release 504 后使用真实的 GitHub API 认证和 CDN，验证 Bun/bunx、Computer Use 摘要、FFmpeg 本机执行和离线缓存。
+该验证不读取构建任务或发布密钥，不创建或发布客户端安装包；完整签名打包仍由正式任务验证。
 
 Core 的格式、Clippy 和工作区测试由 `verify-core` job 执行，通过后才运行各平台发布构建。开发机不执行 Rust 编译或测试；正式构建任务均从 Update Server 创建和派发。

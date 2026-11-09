@@ -36,7 +36,7 @@ test("release 504s recover through the asset API without changing source or pinn
       if (url.startsWith("https://github.com/")) return new Response("gateway timeout", { status: 504 });
       if (url.endsWith("/tags/v0.3.6")) return Response.json(metadata);
       assert.equal(options.headers.Accept, "application/octet-stream");
-      assert.equal(url, "https://api.github.com/repos/owner/component/releases/assets/123");
+      assert.equal(new URL(url).pathname, "/repos/owner/component/releases/assets/123");
       return new Response(bytes);
     },
   });

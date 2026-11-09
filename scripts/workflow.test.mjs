@@ -151,6 +151,17 @@ test("prefetches and saves verified Computer Use archives before expensive compi
   assert.doesNotMatch(platformWorkflow.slice(restore, platformWorkflow.indexOf("      - name: Cache Desktop package downloads")), /continue-on-error|always\(\)/);
 });
 
+test("download authentication stays in trusted prefetch steps and both bundles are saved before compilation", () => {
+  assert.equal((platformWorkflow.match(/GITHUB_TOKEN: \$\{\{ github\.token \}\}/g) || []).length, 2);
+  const computer = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Prepare verified Computer Use"), platformWorkflow.indexOf("      - name: Save verified Computer Use"));
+  const video = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Prepare verified video encoder"), platformWorkflow.indexOf("      - name: Save verified video encoder"));
+  assert.match(computer, /GITHUB_TOKEN:/);
+  assert.match(video, /GITHUB_TOKEN:/);
+  assert.ok(platformWorkflow.indexOf("      - name: Save verified video encoder") < platformWorkflow.indexOf("      - name: Build Desktop"));
+  const build = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Build Desktop"), platformWorkflow.indexOf("      - name: Show macOS stapler diagnostics"));
+  assert.doesNotMatch(build, /GITHUB_TOKEN/);
+});
+
 
 test("verifies frozen Core source before completing a parallel platform build", () => {
   assert.match(mainWorkflow, /platforms:\n    needs: prepare/);
