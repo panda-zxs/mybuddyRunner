@@ -133,6 +133,24 @@ test("uses native stable Windows ARM64 tools and propagates install failure from
   assert.match(install, /if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}/);
 });
 
+test("falls back only after primary Bun failure and verifies either installer before compilation", () => {
+  const setup = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Install Bun from GitHub"), platformWorkflow.indexOf("      - uses: actions/setup-go@v6", platformWorkflow.indexOf("      - name: Install Bun from GitHub")));
+  assert.match(setup, /id: bun-primary[\s\S]*continue-on-error: true/);
+  assert.match(setup, /steps\.packaged\.outputs\.cache-hit != 'true' && steps\.bun-primary\.outcome == 'failure'/);
+  assert.match(setup, /setup-bun-fallback\.mjs install[\s\S]*Verify Bun version and host architecture[\s\S]*setup-bun-fallback\.mjs verify/);
+  assert.equal((setup.match(/continue-on-error/g) || []).length, 1);
+});
+
+test("prefetches and saves verified Computer Use archives before expensive compilation", () => {
+  const restore = platformWorkflow.indexOf("      - name: Restore Computer Use release archive");
+  const prepare = platformWorkflow.indexOf("      - name: Prepare verified Computer Use release archive");
+  const save = platformWorkflow.indexOf("      - name: Save verified Computer Use release archive");
+  assert.ok(restore > 0 && restore < prepare && prepare < save && save < platformWorkflow.indexOf("      - name: Build Desktop"));
+  assert.match(platformWorkflow.slice(restore, save), /computer-use-v1-\$\{\{ matrix\.platform \}\}-\$\{\{ matrix\.arch \}\}-\$\{\{ hashFiles\('\*\*\/scripts\/computer-use\/release\.json'\) \}\}/);
+  assert.match(platformWorkflow.slice(prepare, save), /prefetch-computer-use\.mjs "\$SOURCE_DIR" "\$\{\{ matrix\.platform \}\}" "\$\{\{ matrix\.arch \}\}"/);
+  assert.doesNotMatch(platformWorkflow.slice(restore, platformWorkflow.indexOf("      - name: Cache Desktop package downloads")), /continue-on-error|always\(\)/);
+});
+
 
 test("verifies frozen Core source before completing a parallel platform build", () => {
   assert.match(mainWorkflow, /platforms:\n    needs: prepare/);

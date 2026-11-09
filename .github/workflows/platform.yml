@@ -187,6 +187,7 @@ jobs:
       npm_config_cache: ${{ github.workspace }}/.build-cache/npm
       ELECTRON_CACHE: ${{ github.workspace }}/.build-cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.build-cache/electron-builder
+      DESKTOP_BUN_VERSION: ${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}
     if: always() && !cancelled() && inputs.desktop_needed && (needs.core.result == 'success' || !inputs.core_needed)
     strategy:
       fail-fast: false
@@ -228,11 +229,22 @@ jobs:
         with:
           path: desktop-dist
           key: desktop-v2-${{ env.TASK_ID }}-${{ matrix.target }}-${{ inputs.source_commit }}-${{ inputs.core_commit }}-${{ hashFiles('.github/workflows/platform.yml', 'scripts/**') }}-${{ steps.update-config.outputs.digest }}
-      - uses: oven-sh/setup-bun@v2
+      - name: Install Bun from GitHub
+        id: bun-primary
+        uses: oven-sh/setup-bun@v2
         if: steps.packaged.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 2
         with:
-          bun-version: ${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}
+          bun-version: ${{ env.DESKTOP_BUN_VERSION }}
           bun-download-url: ${{ matrix.target == 'windows-arm64' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-aarch64.zip' || '' }}
+      - name: Install Bun from official npm fallback
+        if: steps.packaged.outputs.cache-hit != 'true' && steps.bun-primary.outcome == 'failure'
+        timeout-minutes: 5
+        run: node scripts/setup-bun-fallback.mjs install
+      - name: Verify Bun version and host architecture
+        if: steps.packaged.outputs.cache-hit != 'true'
+        run: node scripts/setup-bun-fallback.mjs verify
       - uses: actions/setup-go@v6
         if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
         with:
@@ -271,6 +283,24 @@ jobs:
           New-Item -ItemType Directory -Force src | Out-Null
           Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination src
           "SOURCE_DIR=$((Resolve-Path src).Path)" >> $env:GITHUB_ENV
+      - name: Restore Computer Use release archive
+        id: computer-use-cache
+        if: steps.packaged.outputs.cache-hit != 'true' && hashFiles('**/scripts/computer-use/release.json') != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SOURCE_DIR }}/out/.computer-use-cache
+          key: computer-use-v1-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('**/scripts/computer-use/release.json') }}
+      - name: Prepare verified Computer Use release archive
+        if: steps.packaged.outputs.cache-hit != 'true'
+        timeout-minutes: 6
+        shell: bash
+        run: node scripts/prefetch-computer-use.mjs "$SOURCE_DIR" "${{ matrix.platform }}" "${{ matrix.arch }}"
+      - name: Save verified Computer Use release archive
+        if: steps.packaged.outputs.cache-hit != 'true' && steps.computer-use-cache.outputs.cache-hit != 'true' && hashFiles('**/scripts/computer-use/release.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SOURCE_DIR }}/out/.computer-use-cache
+          key: ${{ steps.computer-use-cache.outputs.cache-primary-key }}
       - name: Cache Desktop package downloads
         if: steps.packaged.outputs.cache-hit != 'true'
         uses: actions/cache@v4
