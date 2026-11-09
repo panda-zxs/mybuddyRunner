@@ -3,49 +3,11 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { basename, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
+import { downloadGitHubBytes as download, DownloadError } from "./github-release.mjs";
 
-const transient = new Set([408, 429, 500, 502, 503, 504]);
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const maxBytes = 64 * 1024 * 1024;
 
-class DownloadError extends Error {}
-
-async function download(url, accept, { request, wait }) {
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    let retryable = true;
-    try {
-      const response = await request(url, { headers: { Accept: accept }, signal: AbortSignal.timeout(45_000) });
-      if (!response.ok) {
-        retryable = transient.has(response.status);
-        await response.body?.cancel().catch(() => {});
-        const error = new Error(`Computer Use upstream returned HTTP ${response.status}`);
-        // The API can recover a stale release URL as well as transient downloads.
-        if (retryable || response.status === 404) throw new DownloadError(error.message);
-        throw error;
-      }
-      const chunks = [];
-      let size = 0;
-      for await (const chunk of response.body) {
-        size += chunk.length;
-        if (size > maxBytes) {
-          retryable = false;
-          throw new Error("Computer Use download exceeds the archive size limit");
-        }
-        chunks.push(chunk);
-      }
-      return Buffer.concat(chunks);
-    } catch (error) {
-      if (!retryable || attempt === 2) {
-        if (retryable) throw new DownloadError("Computer Use download failed after bounded retries", { cause: error });
-        throw error;
-      }
-      console.warn(`Computer Use download attempt ${attempt}/2 failed; retrying in 2s`);
-      await wait(2000);
-    }
-  }
-}
-
-export async function prefetchComputerUse(root, platform, arch, { request = fetch, wait = delay } = {}) {
+export async function prefetchComputerUse(root, platform, arch, { request = fetch, wait = delay, apiToken = process.env.GITHUB_TOKEN || "" } = {}) {
   const manifest = join(root, "scripts", "computer-use", "release.json");
   if (!existsSync(manifest)) {
     console.log("Source has no pinned Computer Use release; nothing to prefetch");
@@ -65,7 +27,7 @@ export async function prefetchComputerUse(root, platform, arch, { request = fetc
     console.log(`Verified cached Computer Use ${release.version} for ${platform}-${arch}`);
     return archive;
   }
-  const options = { request, wait };
+  const options = { request, wait, apiToken };
   const base = `https://api.github.com/repos/${release.repository}/releases`;
   let bytes;
   try {

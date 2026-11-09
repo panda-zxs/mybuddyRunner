@@ -295,12 +295,34 @@ jobs:
         timeout-minutes: 6
         shell: bash
         run: node scripts/prefetch-computer-use.mjs "$SOURCE_DIR" "${{ matrix.platform }}" "${{ matrix.arch }}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Save verified Computer Use release archive
         if: steps.packaged.outputs.cache-hit != 'true' && steps.computer-use-cache.outputs.cache-hit != 'true' && hashFiles('**/scripts/computer-use/release.json') != ''
         uses: actions/cache/save@v4
         with:
           path: ${{ env.SOURCE_DIR }}/out/.computer-use-cache
           key: ${{ steps.computer-use-cache.outputs.cache-primary-key }}
+      - name: Restore video encoder bundle
+        id: video-tools-cache
+        if: steps.packaged.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SOURCE_DIR }}/resources/video-tools/${{ matrix.platform }}-${{ matrix.arch }}
+          key: video-tools-v1-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('scripts/video-tools-release.json', '**/scripts/beforePack.js') }}
+      - name: Prepare verified video encoder bundle
+        if: steps.packaged.outputs.cache-hit != 'true'
+        timeout-minutes: 6
+        shell: bash
+        run: node scripts/prefetch-video-tools.mjs "$SOURCE_DIR" "${{ matrix.platform }}" "${{ matrix.arch }}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Save verified video encoder bundle
+        if: steps.packaged.outputs.cache-hit != 'true' && steps.video-tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SOURCE_DIR }}/resources/video-tools/${{ matrix.platform }}-${{ matrix.arch }}
+          key: ${{ steps.video-tools-cache.outputs.cache-primary-key }}
       - name: Cache Desktop package downloads
         if: steps.packaged.outputs.cache-hit != 'true'
         uses: actions/cache@v4
