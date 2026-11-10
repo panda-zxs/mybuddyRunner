@@ -5,3 +5,4 @@ source/
 core-input/
 dist/
 desktop-dist/
+node_modules/

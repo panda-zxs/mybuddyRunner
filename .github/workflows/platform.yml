@@ -399,6 +399,13 @@ jobs:
         if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: node scripts/set-application-version.mjs "$SOURCE_DIR" "${{ inputs.application_version }}"
+      - name: Prepare verified Electron compiler and packaging archive
+        if: steps.packaged.outputs.cache-hit != 'true'
+        timeout-minutes: 10
+        shell: bash
+        run: node scripts/prefetch-electron.mjs "$SOURCE_DIR" "${{ matrix.platform }}" "${{ matrix.arch }}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Prepare task-bound Core resources
         if: steps.packaged.outputs.cache-hit != 'true'
         run: node scripts/prepare-core-bundle.mjs "${{ matrix.binary }}" core-bundle
@@ -498,7 +505,7 @@ jobs:
           npm_config_arch: ${{ matrix.arch }}
           npm_config_target_arch: ${{ matrix.arch }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
+          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
           npm_config_electron_builder_binaries_mirror: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
           npm_config_disturl: https://registry.npmmirror.com/-/binary/node

@@ -152,7 +152,7 @@ test("prefetches and saves verified Computer Use archives before expensive compi
 });
 
 test("download authentication stays in trusted prefetch steps and both bundles are saved before compilation", () => {
-  assert.equal((platformWorkflow.match(/GITHUB_TOKEN: \$\{\{ github\.token \}\}/g) || []).length, 2);
+  assert.equal((platformWorkflow.match(/GITHUB_TOKEN: \$\{\{ github\.token \}\}/g) || []).length, 3);
   const computer = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Prepare verified Computer Use"), platformWorkflow.indexOf("      - name: Save verified Computer Use"));
   const video = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Prepare verified video encoder"), platformWorkflow.indexOf("      - name: Save verified video encoder"));
   assert.match(computer, /GITHUB_TOKEN:/);
@@ -216,4 +216,19 @@ test("captures macOS stapler diagnostics even when the source hook buffers its e
   assert.match(diagnostics, /if: always\(\) && runner.os == 'macOS'/);
   assert.match(diagnostics, /cat "\$RUNNER_TEMP\/mybuddy-macos-tools\/stapler.jsonl"/);
   assert.doesNotMatch(build + diagnostics, /continue-on-error:|NODE_OPTIONS:.*require|afterSign\.js|notarytool.*submit/);
+});
+
+test("prepares one verified Electron VM after dependency installation and before packaging", () => {
+  const name = "      - name: Prepare verified Electron compiler and packaging archive";
+  const start = platformWorkflow.indexOf(name);
+  assert.ok(start > platformWorkflow.indexOf("      - name: Install Desktop dependencies on Windows"));
+  assert.ok(start < platformWorkflow.indexOf("      - name: Build Desktop"));
+  const step = platformWorkflow.slice(start, platformWorkflow.indexOf("      - name: Prepare task-bound Core resources", start));
+  assert.match(step, /if: steps\.packaged\.outputs\.cache-hit != 'true'/);
+  assert.match(step, /timeout-minutes: 10/);
+  assert.match(step, /scripts\/prefetch-electron\.mjs "\$SOURCE_DIR"/);
+  assert.match(step, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
+  const build = platformWorkflow.slice(platformWorkflow.indexOf("      - name: Build Desktop"), platformWorkflow.indexOf("      - name: Show macOS stapler diagnostics"));
+  assert.doesNotMatch(build, /GITHUB_TOKEN:/);
+  assert.doesNotMatch(build, /ELECTRON_MIRROR:.*npmmirror/);
 });

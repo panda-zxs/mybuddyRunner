@@ -1,9 +1,12 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
+import { downloadArtifact } from "@electron/get";
+import extract from "extract-zip";
 import { installBunFallback } from "./setup-bun-fallback.mjs";
 import { prefetchComputerUse } from "./prefetch-computer-use.mjs";
 import { prefetchVideoTools } from "./prefetch-video-tools.mjs";
+import { prefetchElectronArchive } from "./prefetch-electron.mjs";
 
 const root = mkdtempSync(join(process.env.RUNNER_TEMP, "native-download-smoke-"));
 try {
@@ -11,6 +14,7 @@ try {
   const version = process.platform === "win32" && process.arch === "arm64" ? "1.4.2" : "1.3.5";
   const cleanEnv = { ...process.env };
   delete cleanEnv.GITHUB_TOKEN;
+  delete cleanEnv.NODE_OPTIONS;
   const run = (cmd, args, options) => execFileSync(cmd, args, { ...options, env: cleanEnv });
   const bun = installBunFallback(version, { tempDirectory: root, githubPath: join(root, "test-path"), run });
   const bunx = join(dirname(bun), process.platform === "win32" ? "bunx.exe" : "bunx");
@@ -35,10 +39,28 @@ try {
   const offline = { request: async () => { throw new Error("Verified caches must work offline"); } };
   await prefetchComputerUse(root, process.platform, process.arch, offline);
   await prefetchVideoTools(root, process.platform, process.arch, offline);
-  console.log(`Native download smoke passed: ${process.platform}-${process.arch}; Bun/bunx ${version}; ${process.env.GITHUB_TOKEN ? "authenticated" : "anonymous"} Computer Use API; FFmpeg executable and notices; offline cache.`);
+  const electron = { version: "37.10.3", platform: process.platform, arch: process.arch, cacheRoot: join(root, "electron-cache") };
+  let electronAPICalls = 0;
+  const archive = await prefetchElectronArchive(electron, {
+    getArtifact: downloadArtifact, wait: async () => {}, request: async (url, options) => {
+      if (new URL(url).hostname === "github.com") return new Response(null, { status: 504 });
+      if (new URL(url).hostname === "api.github.com") electronAPICalls++;
+      return fetch(url, options);
+    },
+  });
+  if (electronAPICalls < 3) throw new Error("Electron archive and checksum API fallback were not exercised");
+  const electronDir = join(root, "electron-runtime");
+  await extract(archive, { dir: electronDir });
+  const binary = join(electronDir, process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : process.platform === "win32" ? "electron.exe" : "electron");
+  const actual = JSON.parse(execFileSync(binary, ["-e", 'require("node:fs").writeSync(1,JSON.stringify({platform:process.platform,arch:process.arch,electron:process.versions.electron}));process.exit(0)'], {
+    env: { ...cleanEnv, ELECTRON_RUN_AS_NODE: "1" }, encoding: "utf8", timeout: 180_000, windowsHide: true,
+  }).trim());
+  if (actual.platform !== electron.platform || actual.arch !== electron.arch || actual.electron !== electron.version) throw new Error("Downloaded Electron VM does not match the native target");
+  if (await prefetchElectronArchive(electron, { ...offline, getArtifact: downloadArtifact }) !== archive) throw new Error("Offline Electron cache did not reuse the verified archive");
+  console.log(`Native download smoke passed: ${process.platform}-${process.arch}; Bun/bunx ${version}; ${process.env.GITHUB_TOKEN ? "authenticated" : "anonymous"} Computer Use API; FFmpeg executable and notices; Electron ${electron.version} API fallback, checksum, native VM and offline cache.`);
 } catch (error) {
   console.error(`::error::${error.message.replaceAll("\n", " ").replaceAll("\r", " ")}`);
   process.exitCode = 1;
 } finally {
-  rmSync(root, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }
