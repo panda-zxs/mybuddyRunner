@@ -84,7 +84,10 @@ export async function prepareElectron(root, platform, arch, options = {}) {
     // The download token is not needed by the compiler probe or frozen source.
     delete process.env.GITHUB_TOKEN;
     const runtime = sourceRequire(runtimeFile);
-    executable = await runtime.prepareElectronRuntime({ projectRoot: root, platform, arch }, { download: async () => archive });
+    executable = await runtime.prepareElectronRuntime({ projectRoot: root, platform, arch, executable: "" }, {
+      installedPath: () => { throw new Error("Use the verified prefetched Electron distribution"); },
+      download: async () => archive,
+    });
   } finally {
     if (token !== undefined) process.env.GITHUB_TOKEN = token;
   }

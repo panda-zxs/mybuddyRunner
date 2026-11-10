@@ -62,5 +62,5 @@ try {
   console.error(`::error::${error.message.replaceAll("\n", " ").replaceAll("\r", " ")}`);
   process.exitCode = 1;
 } finally {
-  rmSync(root, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }

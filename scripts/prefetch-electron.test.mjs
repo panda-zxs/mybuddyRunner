@@ -135,6 +135,8 @@ test("compiler and packager share the verified archive without passing the API t
   mkdirSync(runtimeDir, { recursive: true });
   writeFileSync(join(runtimeDir, "runtime.cjs"), `exports.prepareElectronRuntime = async (target, operations) => {
     if (process.env.GITHUB_TOKEN) throw new Error('compiler inherited a token');
+    if (target.executable !== '') throw new Error('compiler reused an external override');
+    require('node:assert/strict').throws(operations.installedPath, /verified prefetched/);
     if (!require('node:fs').existsSync(await operations.download())) throw new Error('missing verified archive');
     return require('node:path').join(target.projectRoot, 'synthetic-electron');
   };`);
