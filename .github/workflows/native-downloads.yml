@@ -2,7 +2,7 @@ name: Verify native build downloads
 on:
   workflow_dispatch:
   push:
-    branches: [main, codex/github-asset-auth-20261109]
+    branches: [main, codex/github-asset-auth-20261109, codex/electron-download-recovery-20261110]
     paths:
       - .github/workflows/native-downloads.yml
       - scripts/github-release*
@@ -11,6 +11,8 @@ on:
       - scripts/native-download-smoke.mjs
       - scripts/video-tools-release.json
       - scripts/computer-use-release.fixture.json
+      - package.json
+      - package-lock.json
 permissions:
   contents: read
 jobs:
@@ -29,8 +31,10 @@ jobs:
         with:
           node-version: 24
           architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - name: Install pinned verification dependencies
+        run: npm ci --ignore-scripts
       - name: Unit tests
-        run: node --test scripts/github-release.test.mjs scripts/prefetch-computer-use.test.mjs scripts/prefetch-video-tools.test.mjs scripts/setup-bun-fallback.test.mjs
+        run: node --test scripts/github-release.test.mjs scripts/prefetch-computer-use.test.mjs scripts/prefetch-video-tools.test.mjs scripts/prefetch-electron.test.mjs scripts/setup-bun-fallback.test.mjs
       - name: Verify real native downloads and offline caches
         run: node scripts/native-download-smoke.mjs
         env:

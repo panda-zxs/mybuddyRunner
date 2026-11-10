@@ -35,6 +35,7 @@ Desktop 的最终安装包版本由已冻结任务计划写入：UI 版本来自
 - Core job 先查询 Update Server 中该任务、该平台已经登记的制品；存在时直接复用，跳过本地缓存恢复、编译和上传。即使 Runner 更新使缓存键失效，也不会用重新打包的 ZIP 覆盖已登记字节。仅 404 才继续构建，认证、服务或元数据错误立即失败。
 - Desktop 整包缓存还绑定 Desktop/Core 来源、打包规则、应用版本与更新配置摘要，避免同任务修复打包逻辑后取回旧包。命中后跳过 Bun 安装和重新打包。
 - Desktop 包下载（Bun/npm）与 Electron 工具下载分开缓存；按宿主系统、架构、目标和依赖版本隔离。仍执行 frozen-lockfile 安装，不缓存 node_modules。
+- 安装依赖后单独准备锁定版本的 Electron。官方 release 下载遇到暂时性错误时有限重试，再切换到带只读 GitHub Token 的官方 asset API；不再依赖单一 npm 镜像。沿用源码中的 `@electron/get` 校验官方 SHA-256，缓存写入 `ELECTRON_CACHE`。源码原有运行时校验确认版本、系统和架构后，字节码编译器与 electron-builder 共用同一份已校验的分发包；源码 tag、任务版本、签名和完整性保护不变。
 - Bun 优先从 GitHub 安装；失败后使用官方 npm `@oven/bun-*` 原生二进制包备用下载路径，Windows ARM64 固定 1.4.2，其他平台固定 1.3.5。备用安装按宿主架构选择，禁用安装脚本，由 npm 校验包完整性并限制重试和总耗时；通过版本与架构检查后才加入 PATH，同时提供 bun/bunx。任一路径安装后均再次检查实际执行版本；两条路径都失败则停止打包。该安装方式使用 Bun [官方支持的 npm 分发渠道](https://bun.sh/docs/installation)。
 - Computer Use 在编译前按冻结源码中的版本、目标和 SHA-256 预下载；Release 地址暂时失败时切换官方 GitHub Release Asset API，摘要不符立即停止。校验后的原始归档单独跨任务缓存，并在后续编译或签名失败前保存；缓存命中仍校验摘要。只写入现有打包脚本识别的 `out/.computer-use-cache`，不改冻结源码或跳过组件校验。API 路径也失败时停止，绝不输出缺少组件的安装包。
 - GitHub API 下载仅在预下载步骤使用内置的只读 `github.token`，不传给客户端源码、CDN 或其他站点。显式处理重定向并刷新签名下载地址，CDN 403 可重新获取一次地址；API 权限错误立即停止，限流只在短等待预算内重试。失败日志包含域名、认证方式和限流计数，不包含令牌或签名 URL。
