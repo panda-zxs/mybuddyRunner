@@ -495,6 +495,7 @@ jobs:
             ${{ matrix.desktopCommand }}
           fi
         env:
+          WPS365_APP_SECRET: ${{ secrets.WPS365_APP_SECRET }}
           MYBUDDY_FEEDBACK_BASE_URL: ${{ matrix.platform != 'linux' && format('{0}/releases/{1}', secrets.MYBUDDY_UPDATE_SERVER_URL, inputs.channel) || '' }}
           MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS: ${{ secrets.MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS }}
           MYBUDDY_PILOT_OSS_HOST: ${{ vars.MYBUDDY_PILOT_OSS_HOST }}
