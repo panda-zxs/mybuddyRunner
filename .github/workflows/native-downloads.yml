@@ -2,7 +2,18 @@ name: Verify native build downloads
 on:
   workflow_dispatch:
   push:
-    branches: [main, codex/github-asset-auth-20261109, codex/electron-download-recovery-20261110]
+    branches: [main]
+    paths:
+      - .github/workflows/native-downloads.yml
+      - scripts/github-release*
+      - scripts/prefetch-*
+      - scripts/setup-bun-fallback*
+      - scripts/native-download-smoke.mjs
+      - scripts/video-tools-release.json
+      - scripts/computer-use-release.fixture.json
+      - package.json
+      - package-lock.json
+  pull_request:
     paths:
       - .github/workflows/native-downloads.yml
       - scripts/github-release*
@@ -15,6 +26,9 @@ on:
       - package-lock.json
 permissions:
   contents: read
+concurrency:
+  group: native-downloads-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   downloads:
     strategy:

@@ -80,7 +80,7 @@ export function matrices(plan) {
     target, ...targetDefinitions[target],
     core_needed: plan.mode !== "desktop" && !cached.has(target),
     desktop_needed: plan.mode !== "core" && !desktopCached.has(target),
-  }));
+  })).filter((item) => item.core_needed || item.desktop_needed);
   return {
     core: { include: core }, desktop: { include: desktop }, platforms: { include: platforms },
     coreNeeded: platforms.some(item => item.core_needed),

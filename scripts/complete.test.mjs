@@ -29,7 +29,13 @@ test("waits for delayed release registration and sends the exact authenticated r
   await completeTask({ ...config, request: mock.request, timeoutMs: 500 });
   assert.equal(COMPLETION_TIMEOUT_MS, 3600000);
   assert.equal(mock.calls[0].options.headers.Authorization, "Bearer test-secret");
+  assert.equal(mock.calls[0].options.headers["X-MyBuddy-Core-Verified"], undefined);
   assert.deepEqual(JSON.parse(mock.calls[0].body), { succeeded: true, reason: "" });
+
+  const failedWithVerifiedCore = responder(200);
+  await completeTask({ ...config, succeeded: false, coreVerified: true, reason: "desktop failed", request: failedWithVerifiedCore.request });
+  assert.equal(failedWithVerifiedCore.calls[0].options.headers["X-MyBuddy-Core-Verified"], "true");
+  assert.deepEqual(JSON.parse(failedWithVerifiedCore.calls[0].body), { succeeded: false, reason: "desktop failed" });
 });
 
 test("rejects redirects and server failures without forwarding the credential", async () => {

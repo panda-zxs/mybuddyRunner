@@ -23,6 +23,7 @@ jobs:
   prepare:
     environment: MYBUDDY
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
     outputs:
@@ -36,8 +37,6 @@ jobs:
       desktop_runtime: ${{ steps.plan.outputs.desktop_runtime }}
       core_needed: ${{ steps.plan.outputs.core_needed }}
       desktop_needed: ${{ steps.plan.outputs.desktop_needed }}
-      core_matrix: ${{ steps.plan.outputs.core_matrix }}
-      desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
       platform_matrix: ${{ steps.plan.outputs.platform_matrix }}
     steps:
       - uses: actions/checkout@v6
@@ -106,6 +105,8 @@ jobs:
         with:
           toolchain: ${{ steps.config.outputs.toolchain }}
           components: rustfmt, clippy
+      - uses: taiki-e/install-action@nextest
+        if: steps.verified.outputs.cache-hit != 'true'
       - name: Cache Core verification dependencies
         if: steps.verified.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
@@ -140,7 +141,7 @@ jobs:
     needs: prepare
     # Compile Core while the same frozen commit is verified. The completion
     # callback below is the only gate that makes staged packages reusable.
-    if: needs.prepare.result == 'success'
+    if: needs.prepare.result == 'success' && (needs.prepare.outputs.core_needed == 'true' || needs.prepare.outputs.desktop_needed == 'true')
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.platform_matrix) }}
@@ -165,6 +166,7 @@ jobs:
       UPDATE_SERVER_URL: ${{ secrets.MYBUDDY_UPDATE_SERVER_URL }}
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
@@ -178,12 +180,14 @@ jobs:
           CORE='${{ needs.platforms.result }}'
           DESKTOP='${{ needs.platforms.result }}'
           SUCCESS=false
+          CORE_VERIFIED=false
           CORE_NEEDED='${{ needs.prepare.outputs.core_needed }}'
           DESKTOP_NEEDED='${{ needs.prepare.outputs.desktop_needed }}'
           if [ "$MODE" = core ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$MODE" = desktop ] && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$MODE" = bundle ] && { [ "$CORE" = success ] || [ "$CORE_NEEDED" = false ]; } && { [ "$DESKTOP" = success ] || [ "$DESKTOP_NEEDED" = false ]; }; then SUCCESS=true; fi
           if [ "$CORE_NEEDED" = true ] && [ "$VERIFY" != success ]; then SUCCESS=false; fi
-          node scripts/complete.mjs "$SUCCESS" "verify=$VERIFY core=$CORE desktop=$DESKTOP"
+          if { [ "$MODE" = core ] || [ "$MODE" = bundle ]; } && { [ "$VERIFY" = success ] || [ "$CORE_NEEDED" = false ]; }; then CORE_VERIFIED=true; fi
+          node scripts/complete.mjs "$SUCCESS" "verify=$VERIFY core=$CORE desktop=$DESKTOP" "$CORE_VERIFIED"
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}

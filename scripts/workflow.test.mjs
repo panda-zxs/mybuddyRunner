@@ -26,13 +26,14 @@ test("completion accepts verified Core reuse and still rejects failed required w
   assert.ok(fetchPlan.includes('core_needed=${result.coreNeeded}'));
   assert.ok(fetchPlan.includes('desktop_needed=${result.desktopNeeded}'));
   const targets = ['windows-x64'];
-  for (const [mode, verify, platform, cached, expected] of [
-    ['desktop', 'skipped', 'success', false, 'true'],
-    ['desktop', 'skipped', 'failure', false, 'false'],
-    ['bundle', 'failure', 'success', false, 'false'],
-    ['bundle', 'skipped', 'success', false, 'false'],
-    ['bundle', 'success', 'success', false, 'true'],
-    ['bundle', 'skipped', 'skipped', true, 'true'],
+  for (const [mode, verify, platform, cached, expected, expectedCoreVerified] of [
+    ['desktop', 'skipped', 'success', false, 'true', 'false'],
+    ['desktop', 'skipped', 'failure', false, 'false', 'false'],
+    ['bundle', 'failure', 'success', false, 'false', 'false'],
+    ['bundle', 'skipped', 'success', false, 'false', 'false'],
+    ['bundle', 'success', 'failure', false, 'false', 'true'],
+    ['bundle', 'success', 'success', false, 'true', 'true'],
+    ['bundle', 'skipped', 'skipped', true, 'true', 'true'],
   ]) {
     const requirements = matrices({ mode, targets, ...(cached ? { coreCachedTargets: targets, desktopCachedTargets: targets } : {}) });
     const values = {
@@ -45,8 +46,8 @@ test("completion accepts verified Core reuse and still rejects failed required w
     const body = mainWorkflow.split('      - name: Report task result')[1].split('        run: |\n')[1].split('        env:')[0]
       .replace(/^ {10}/gm, '')
       .replace(/\$\{\{ ([^}]+) \}\}/g, (_, key) => { assert.ok(key in values); return values[key]; })
-      .replace(/node scripts\/complete\.mjs[^\n]*/, 'printf "%s" "$SUCCESS"');
-    assert.equal(execFileSync('bash', ['-e', '-c', body], { encoding: 'utf8' }), expected, `${mode}/${verify}/${platform}`);
+      .replace(/node scripts\/complete\.mjs[^\n]*/, 'printf "%s/%s" "$SUCCESS" "$CORE_VERIFIED"');
+    assert.equal(execFileSync('bash', ['-e', '-c', body], { encoding: 'utf8' }), `${expected}/${expectedCoreVerified}`, `${mode}/${verify}/${platform}`);
   }
 });
 
@@ -74,11 +75,12 @@ test("uses the MYBUDDY environment and injects public update trust only into des
   assert.equal((workflow.match(/secrets\.MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS/g) || []).length, 2);
 });
 
-test("extracts GitLab ZIP sources with platform-native tools", () => {
+test("extracts GitLab ZIP sources with platform-native tools into stable paths", () => {
   assert.match(workflow, /ditto -x -k core-source\.zip core-source/);
   assert.match(workflow, /ditto -x -k desktop-source\.zip source/);
   assert.match(workflow, /unzip -q core-source\.zip -d core-source/);
   assert.match(workflow, /unzip -q desktop-source\.zip -d source/);
+  assert.equal((platformWorkflow.match(/mv "\$SOURCE_DIR" src\n\s+echo "SOURCE_DIR=src" >> "\$GITHUB_ENV"/g) || []).length, 2);
   assert.match(workflow, /Expand-Archive -Path core-source\.zip -DestinationPath core-source-archive/);
   assert.match(workflow, /Expand-Archive -Path desktop-source\.zip -DestinationPath source-archive/);
   assert.match(workflow, /Get-ChildItem -Force \$sourceDir\.FullName \| Move-Item -Destination core-src/);
@@ -205,19 +207,22 @@ test("reuses verification only for an exact source and verification contract", (
   assert.ok(verify.indexOf("run: bash scripts/verify-core.sh") < verify.indexOf("      - name: Record successful"));
 });
 
-test("platform jobs preserve exact package caches and per-platform dependencies", () => {
+test("platform jobs preserve cross-task Core caches, Tauri dependency reuse, and on-failure Desktop package caches", () => {
+  assert.match(mainWorkflow, /if: needs\.prepare\.result == 'success' && \(needs\.prepare\.outputs\.core_needed == 'true' \|\| needs\.prepare\.outputs\.desktop_needed == 'true'\)/);
   assert.match(mainWorkflow, /uses: \.\/\.github\/workflows\/platform.yml/);
   assert.match(platformWorkflow, /if: inputs.core_needed/);
   assert.match(platformWorkflow, /if: always\(\) && !cancelled\(\) && inputs.desktop_needed && \(needs.core.result == 'success' \|\| !inputs.core_needed\)/);
   const core = platformWorkflow.slice(platformWorkflow.indexOf('\n  core:'), platformWorkflow.indexOf('\n  desktop:'));
   assert.ok(core.indexOf('Verify Core Linux GLIBC baseline') < core.indexOf('Save packaged Core files before upload'));
   assert.ok(core.indexOf('Save packaged Core files before upload') < core.indexOf('Upload Core package to Update Server'));
-  assert.match(core, /core-package-v1-.*inputs.core_commit.*hashFiles/);
+  assert.match(core, /core-package-v2-\$\{\{ matrix\.target \}\}-\$\{\{ inputs\.core_commit \}\}-\$\{\{ inputs\.core_tag \}\}-\$\{\{ hashFiles/);
+  assert.doesNotMatch(core, /core-package-v2-.*TASK_ID/);
+  assert.match(platformWorkflow, /prefix-key: mybuddy-tauri-release-v1\n\s+key: \$\{\{ matrix\.target \}\}\n/);
   assert.match(platformWorkflow, /key: desktop-v2-.*inputs.source_commit.*inputs.core_commit.*hashFiles.*steps.update-config.outputs.digest/);
   assert.ok(platformWorkflow.indexOf('Restore packaged Desktop files') < platformWorkflow.indexOf('oven-sh/setup-bun'));
-  assert.ok(platformWorkflow.indexOf('Collect Desktop artifacts') < platformWorkflow.indexOf('Save packaged Desktop files before upload'));
-  assert.ok(platformWorkflow.indexOf('Save packaged Desktop files before upload') < platformWorkflow.indexOf('Reuse already uploaded task artifacts'));
-  assert.match(platformWorkflow, /Reuse already uploaded task artifacts\n        run:/);
+  assert.ok(platformWorkflow.indexOf('Collect Desktop artifacts') < platformWorkflow.indexOf('Reuse already uploaded task artifacts'));
+  assert.ok(platformWorkflow.indexOf('Upload Desktop packages to Update Server') < platformWorkflow.indexOf('Save packaged Desktop files on upload failure'));
+  assert.ok(platformWorkflow.indexOf('Save packaged Desktop files on upload failure') < platformWorkflow.indexOf('Fail job after Desktop upload error'));
 });
 
 test("captures macOS stapler diagnostics even when the source hook buffers its error", () => {

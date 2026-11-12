@@ -23,4 +23,8 @@ stage() {
 }
 stage 'Core format' cargo fmt --all -- --check
 stage 'Core Clippy' cargo clippy --workspace --locked -- -D warnings
-stage 'Core workspace tests' cargo test --workspace --locked
+if command -v cargo-nextest >/dev/null 2>&1; then
+  stage 'Core workspace tests' cargo nextest run --workspace --locked
+else
+  stage 'Core workspace tests' cargo test --workspace --locked
+fi

@@ -37,10 +37,10 @@ Desktop 的最终安装包版本由已冻结任务计划写入：UI 版本来自
 
 - 验证成功记录绑定 Core commit、固定 Ubuntu 24.04、宿主系统/架构、工具链和验证脚本/配置/下载规则摘要。仅成功保存、仅精确命中；打包规则变化不再触发重复验证。缓存淘汰时重新验证。
 - `core-verification.json` 管理工具链及编译配置；`verify-core.sh` 分别输出格式、Clippy、测试耗时，每分钟输出编译进程 CPU/内存摘要，失败立即退出。验证 job 限时 90 分钟，各平台 job 限时 120 分钟。
-- Core 验证和发布的 Cargo 依赖缓存分别管理，源码使用稳定路径；测试失败也保留依赖缓存。Linux arm64 cross 只缓存宿主下载与工具，不缓存容器 target。
-- Core 发布 ZIP 在平台校验后、上传前保存精确缓存；重试上传无需重新编译。键包含任务、Core commit、目标平台和 Runner 打包规则摘要。
+- Core 验证和发布的 Cargo 依赖缓存分别管理，所有平台 Core 与 Desktop 源码均解压至稳定相对路径（`core-src` / `core-verify-src` / `src`）；测试失败也保留依赖缓存，Tauri Rust 依赖缓存按目标平台跨 commit 增量复用。Linux arm64 cross 只缓存宿主下载与工具，命中时跳过重新编译安装 `cross`。
+- Core 发布 ZIP 在平台校验后、上传前保存跨任务精确缓存（键绑定目标平台、Core commit、Core tag 和 Runner 打包规则摘要）；即使 `bundle` 任务的 Desktop 阶段失败，`complete` 也会在 `verify-core` 通过时通知 Update Server 将已上传的 Core 立即晋升到服务端 `CoreCache`，使同任务重试和后续新建任务直接跳过 Core 编译。
 - Core job 先查询 Update Server 中该任务、该平台已经登记的制品；存在时直接复用，跳过本地缓存恢复、编译和上传。即使 Runner 更新使缓存键失效，也不会用重新打包的 ZIP 覆盖已登记字节。仅 404 才继续构建，认证、服务或元数据错误立即失败。
-- Desktop 整包缓存还绑定 Desktop/Core 来源、打包规则、应用版本与更新配置摘要，避免同任务修复打包逻辑后取回旧包。命中后跳过 Bun 安装和重新打包。
+- Desktop 整包缓存绑定任务、Desktop/Core 来源、打包规则、应用版本与更新配置摘要，且**仅在上传 Update Server 失败时才写入 Actions 缓存**，避免正常成功构建向 10GB 缓存池写入数 GB 一次性安装包而淘汰 Rust 编译缓存。命中后跳过 Bun 安装和重新打包。
 - Desktop 包下载（Bun/npm）与 Electron 工具下载分开缓存；按宿主系统、架构、目标和依赖版本隔离。仍执行 frozen-lockfile 安装，不缓存 node_modules。
 - 安装依赖后单独准备锁定版本的 Electron。官方 release 下载遇到暂时性错误时有限重试，再切换到带只读 GitHub Token 的官方 asset API；不再依赖单一 npm 镜像。沿用源码中的 `@electron/get` 校验官方 SHA-256，缓存写入 `ELECTRON_CACHE`。源码原有运行时校验确认版本、系统和架构后，字节码编译器与 electron-builder 共用同一份已校验的分发包；源码 tag、任务版本、签名和完整性保护不变。
 - Bun 优先从 GitHub 安装；失败后使用官方 npm `@oven/bun-*` 原生二进制包备用下载路径，Windows ARM64 固定 1.4.2，其他平台固定 1.3.5。备用安装按宿主架构选择，禁用安装脚本，由 npm 校验包完整性并限制重试和总耗时；通过版本与架构检查后才加入 PATH，同时提供 bun/bunx。任一路径安装后均再次检查实际执行版本；两条路径都失败则停止打包。该安装方式使用 Bun [官方支持的 npm 分发渠道](https://bun.sh/docs/installation)。
@@ -76,7 +76,7 @@ GitHub step 的 50 分钟限制提供外层兜底。Windows/Linux 执行方式�
 Runner，需要把该 revision 合入配置的 Runner ref 后，从 Pilot/Update Server
 重新派发任务；可复用的 Core 和已完成目标仍按原计划规则复用。
 
-签名安装包会先保存到任务缓存，再查询已上传制品和执行上传。
+签名安装包先执行已上传制品核对和上传；若传输失败再保存到任务缓存以便重试秒传。
 连接超时及临时服务错误最多尝试 4 次；权限错误、制品冲突和缺失结果
 交给原有校验处理。重试恢复缓存后仍会与任务已登记制品核对，保持相同字节。
 
