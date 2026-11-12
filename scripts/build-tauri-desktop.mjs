@@ -43,7 +43,6 @@ export function buildTauriDesktop(platform, arch, options = {}) {
   };
 
   execute(process.execPath, ["scripts/prepareMyBuddyCore.js"], baseEnv);
-  execute(process.execPath, ["scripts/prepareMarketResources.js"], baseEnv);
   execute(process.execPath, ["scripts/prepareHubResources.js"], baseEnv);
 
   if (platform === "darwin") {

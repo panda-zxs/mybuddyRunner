@@ -17,7 +17,6 @@ test("runs macOS Tauri release preparation and packaging in order", () => {
     calls.map((call) => call.args),
     [
       ["scripts/prepareMyBuddyCore.js"],
-      ["scripts/prepareMarketResources.js"],
       ["scripts/prepareHubResources.js"],
       ["packages/desktop-tauri/macos-release.mjs", "resources", "arm64"],
       ["packages/desktop-tauri/build-macos.sh", "out"],
@@ -55,18 +54,17 @@ test("runs Windows Tauri release packaging and verifies installed payload", (t) 
   });
 
   assert.deepEqual(
-    calls.slice(0, 5).map((call) => call.args),
+    calls.slice(0, 4).map((call) => call.args),
     [
       ["scripts/prepareMyBuddyCore.js"],
-      ["scripts/prepareMarketResources.js"],
       ["scripts/prepareHubResources.js"],
       ["packages/release-tools/src/buildTauriWindows.mjs", "resources", "x64"],
       ["packages/release-tools/src/buildTauriWindows.mjs", "out", "--arch=x64"],
     ],
   );
-  assert.equal(calls.length, 6);
-  assert.equal(calls[5].args[0], "/S");
-  assert.match(calls[5].args[1], /^\/D=/);
+  assert.equal(calls.length, 5);
+  assert.equal(calls[4].args[0], "/S");
+  assert.match(calls[4].args[1], /^\/D=/);
 });
 
 test("rejects incomplete Windows Tauri installation payload", (t) => {
