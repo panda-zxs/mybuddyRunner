@@ -118,6 +118,10 @@ jobs:
           New-Item -ItemType Directory -Force core-src | Out-Null
           Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination core-src
           "SOURCE_DIR=$((Resolve-Path core-src).Path)" >> $env:GITHUB_ENV
+      - name: Apply task-managed Core version
+        if: steps.packaged.outputs.cache-hit != 'true'
+        shell: bash
+        run: node scripts/set-core-version.mjs "$SOURCE_DIR" "${{ inputs.core_tag }}"
       - uses: dtolnay/rust-toolchain@stable
         if: steps.packaged.outputs.cache-hit != 'true'
         with:

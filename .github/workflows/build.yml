@@ -97,6 +97,10 @@ jobs:
           # Keep Cargo paths stable across GitLab archives with different commit names.
           mv "$SOURCE_DIR" core-verify-src
           echo "SOURCE_DIR=core-verify-src" >> "$GITHUB_ENV"
+      - name: Apply task-managed Core version
+        if: steps.verified.outputs.cache-hit != 'true'
+        shell: bash
+        run: node scripts/set-core-version.mjs "$SOURCE_DIR" "${{ needs.prepare.outputs.core_tag }}"
       - uses: dtolnay/rust-toolchain@stable
         if: steps.verified.outputs.cache-hit != 'true'
         with:

@@ -106,9 +106,11 @@ test("binds Desktop packaging to the Core tag selected by Update Server", () => 
   assert.match(desktopBuild, /MYBUDDY_BACKEND_VERSION: \$\{\{ inputs\.core_tag \}\}/);
 });
 
-test("applies the task-managed MyBuddy version and avoids the empty Go cache warning", () => {
+test("applies the task-managed MyBuddy and Core versions and avoids the empty Go cache warning", () => {
   assert.match(workflow, /application_version: \$\{\{ steps\.plan\.outputs\.application_version \}\}/);
   assert.match(workflow, /Apply task-managed MyBuddy version[\s\S]*set-application-version\.mjs "\$SOURCE_DIR" "\$\{\{ inputs\.application_version \}\}"/);
+  assert.match(mainWorkflow, /Apply task-managed Core version[\s\S]*set-core-version\.mjs "\$SOURCE_DIR" "\$\{\{ needs\.prepare\.outputs\.core_tag \}\}"/);
+  assert.match(platformWorkflow, /Apply task-managed Core version[\s\S]*set-core-version\.mjs "\$SOURCE_DIR" "\$\{\{ inputs\.core_tag \}\}"/);
   assert.match(workflow, /actions\/setup-go@v6[\s\S]*?go-version: '1\.24'\n\s+cache: false/);
 });
 
