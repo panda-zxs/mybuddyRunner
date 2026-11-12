@@ -32,6 +32,8 @@ jobs:
       channel: ${{ steps.plan.outputs.channel }}
       core_tag: ${{ steps.plan.outputs.core_tag }}
       application_version: ${{ steps.plan.outputs.application_version }}
+      desktop_branch: ${{ steps.plan.outputs.desktop_branch }}
+      desktop_runtime: ${{ steps.plan.outputs.desktop_runtime }}
       core_needed: ${{ steps.plan.outputs.core_needed }}
       desktop_needed: ${{ steps.plan.outputs.desktop_needed }}
       core_matrix: ${{ steps.plan.outputs.core_matrix }}
@@ -150,6 +152,7 @@ jobs:
       core_tag: ${{ needs.prepare.outputs.core_tag }}
       application_version: ${{ needs.prepare.outputs.application_version }}
       channel: ${{ needs.prepare.outputs.channel }}
+      desktop_runtime: ${{ needs.prepare.outputs.desktop_runtime }}
 
   complete:
     environment: MYBUDDY

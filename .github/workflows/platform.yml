@@ -23,6 +23,10 @@ on:
       channel:
         type: string
         required: true
+      desktop_runtime:
+        type: string
+        required: false
+        default: electron
       core_needed:
         type: boolean
         required: true
@@ -216,11 +220,12 @@ jobs:
           PILOT_OSS_HOST: ${{ vars.MYBUDDY_PILOT_OSS_HOST }}
           UPDATE_CHANNEL: ${{ inputs.channel }}
           APPLICATION_VERSION: ${{ inputs.application_version }}
+          DESKTOP_RUNTIME: ${{ inputs.desktop_runtime }}
         run: |
           node --input-type=module -e '
             import { createHash } from "node:crypto";
             import fs from "node:fs";
-            const values = [process.env.UPDATE_SERVER_URL, process.env.PILOT_UPDATE_PUBLIC_KEYS, process.env.PILOT_OSS_HOST, process.env.UPDATE_CHANNEL, process.env.APPLICATION_VERSION];
+            const values = [process.env.UPDATE_SERVER_URL, process.env.PILOT_UPDATE_PUBLIC_KEYS, process.env.PILOT_OSS_HOST, process.env.UPDATE_CHANNEL, process.env.APPLICATION_VERSION, process.env.DESKTOP_RUNTIME];
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `digest=${createHash("sha256").update(JSON.stringify(values)).digest("hex")}\n`);
           '
       - name: Restore packaged Desktop files
@@ -309,7 +314,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.SOURCE_DIR }}/resources/video-tools/${{ matrix.platform }}-${{ matrix.arch }}
-          key: video-tools-v1-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('scripts/video-tools-release.json', '**/scripts/beforePack.js') }}
+          key: video-tools-v1-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('scripts/video-tools-release.json', '**/scripts/beforePack.js', '**/packages/release-tools/src/tauriReleaseHelpers.cjs') }}
       - name: Prepare verified video encoder bundle
         if: steps.packaged.outputs.cache-hit != 'true'
         timeout-minutes: 6
@@ -334,7 +339,7 @@ jobs:
           restore-keys: |
             desktop-packages-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-bun${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}-
       - name: Cache Electron tool downloads
-        if: steps.packaged.outputs.cache-hit != 'true'
+        if: steps.packaged.outputs.cache-hit != 'true' && inputs.desktop_runtime != 'tauri'
         uses: actions/cache@v4
         with:
           path: |
@@ -399,8 +404,25 @@ jobs:
         if: steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: node scripts/set-application-version.mjs "$SOURCE_DIR" "${{ inputs.application_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.packaged.outputs.cache-hit != 'true' && inputs.desktop_runtime == 'tauri'
+        with:
+          toolchain: "1.95.0"
+          targets: ${{ matrix.rustTarget }}
+      - name: Cache Tauri Rust dependencies
+        if: steps.packaged.outputs.cache-hit != 'true' && inputs.desktop_runtime == 'tauri'
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: "${{ env.SOURCE_DIR }}/packages/desktop-tauri -> ${{ env.SOURCE_DIR }}/packages/desktop-tauri/target"
+          prefix-key: mybuddy-tauri-release-v1
+          key: ${{ matrix.target }}-${{ inputs.source_commit }}
+          cache-on-failure: true
+      - name: Remove conflicting MSVC linker for Tauri
+        if: runner.os == 'Windows' && steps.packaged.outputs.cache-hit != 'true' && inputs.desktop_runtime == 'tauri'
+        shell: pwsh
+        run: Remove-Item 'C:\Program Files\Git\usr\bin\link.exe' -Force -ErrorAction SilentlyContinue
       - name: Prepare verified Electron compiler and packaging archive
-        if: steps.packaged.outputs.cache-hit != 'true'
+        if: steps.packaged.outputs.cache-hit != 'true' && inputs.desktop_runtime != 'tauri'
         timeout-minutes: 10
         shell: bash
         run: node scripts/prefetch-electron.mjs "$SOURCE_DIR" "${{ matrix.platform }}" "${{ matrix.arch }}"
@@ -480,6 +502,10 @@ jobs:
         shell: bash
         run: |
           cd "$SOURCE_DIR"
+          DESKTOP_CMD="${{ matrix.desktopCommand }}"
+          if [ "${{ inputs.desktop_runtime }}" = tauri ]; then
+            DESKTOP_CMD="node $GITHUB_WORKSPACE/scripts/build-tauri-desktop.mjs ${{ matrix.platform }} ${{ matrix.arch }}"
+          fi
           if [ "$RUNNER_OS" = macOS ]; then
             export DEBUG=electron-osx-sign
             # Source hooks buffer stapler stderr. Keep diagnostics independently
@@ -490,9 +516,9 @@ jobs:
             export MYBUDDY_STAPLER_HELPER="$GITHUB_WORKSPACE/scripts/macos-stapler.mjs"
             export MYBUDDY_STAPLER_LOG="$RUNNER_TEMP/mybuddy-macos-tools/stapler.jsonl"
             export PATH="$RUNNER_TEMP/mybuddy-macos-tools:$PATH"
-            node "$GITHUB_WORKSPACE/scripts/build-progress.mjs" ${{ matrix.desktopCommand }}
+            node "$GITHUB_WORKSPACE/scripts/build-progress.mjs" $DESKTOP_CMD
           else
-            ${{ matrix.desktopCommand }}
+            $DESKTOP_CMD
           fi
         env:
           WPS365_APP_SECRET: ${{ secrets.WPS365_APP_SECRET }}

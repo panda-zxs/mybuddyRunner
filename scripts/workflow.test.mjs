@@ -2,11 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { load } from "js-yaml";
 import { matrices } from "./plan.mjs";
 
 const mainWorkflow = readFileSync(new URL("../.github/workflows/build.yml", import.meta.url), "utf8");
 const platformWorkflow = readFileSync(new URL("../.github/workflows/platform.yml", import.meta.url), "utf8");
 const workflow = mainWorkflow + "\n" + platformWorkflow;
+
+test("supports explicit desktop_runtime routing for Electron and Tauri in the unified platform pipeline", () => {
+  const fetchPlan = readFileSync(new URL("./fetch-plan.mjs", import.meta.url), "utf8");
+  assert.ok(fetchPlan.includes("desktop_branch=${result.desktopBranch}"));
+  assert.ok(fetchPlan.includes("desktop_runtime=${result.desktopRuntime}"));
+  assert.match(mainWorkflow, /desktop_runtime: \$\{\{ steps\.plan\.outputs\.desktop_runtime \}\}/);
+  assert.match(mainWorkflow, /desktop_runtime: \$\{\{ needs\.prepare\.outputs\.desktop_runtime \}\}/);
+  assert.match(platformWorkflow, /desktop_runtime:\n\s+type: string\n\s+required: false\n\s+default: electron/);
+  assert.match(platformWorkflow, /if: steps\.packaged\.outputs\.cache-hit != 'true' && inputs\.desktop_runtime == 'tauri'/);
+  assert.match(platformWorkflow, /if: steps\.packaged\.outputs\.cache-hit != 'true' && inputs\.desktop_runtime != 'tauri'/);
+  assert.match(platformWorkflow, /if \[ "\$\{\{ inputs\.desktop_runtime \}\}" = tauri \]; then\n\s+DESKTOP_CMD="node \$GITHUB_WORKSPACE\/scripts\/build-tauri-desktop\.mjs \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}"/);
+});
 
 test("completion accepts verified Core reuse and still rejects failed required work", () => {
   const fetchPlan = readFileSync(new URL('./fetch-plan.mjs', import.meta.url), 'utf8');

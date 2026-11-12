@@ -10,6 +10,25 @@ const targetDefinitions = {
 };
 
 const minimumCoreVersion = [0, 2, 2];
+const tauriTargets = new Set(["darwin-arm64", "darwin-x64", "windows-x64", "windows-arm64"]);
+
+export function resolveDesktopBranch(plan) {
+  if (plan?.mode === "core") return "";
+  const explicit = plan?.desktopBranch;
+  const sourceBranch = plan?.sources?.desktop?.branch;
+  if (explicit !== undefined && sourceBranch !== undefined && explicit !== sourceBranch) {
+    throw new Error("invalid desktop branch");
+  }
+  const branch = explicit ?? sourceBranch ?? "master";
+  if (!["master", "tauri"].includes(branch)) throw new Error("invalid desktop branch");
+  return branch;
+}
+
+export function resolveDesktopRuntime(plan) {
+  if (plan?.mode === "core") return "";
+  return resolveDesktopBranch(plan) === "tauri" ? "tauri" : "electron";
+}
+
 function coreVersionAtLeastMinimum(tag) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag || "");
   if (!match) return false;
@@ -38,8 +57,14 @@ export function validatePlan(plan, expectedTaskId) {
   if (plan.mode === "desktop" && !/^[a-f0-9]{32}$/.test(plan.coreReleaseId || "")) throw new Error("desktop task requires a Core candidate");
   if (plan.mode !== "desktop" && plan.coreReleaseId) throw new Error("unexpected Core candidate");
   if (plan.mode !== "core") {
+    const branch = resolveDesktopBranch(plan);
+    if (branch === "tauri" && plan.targets.some((target) => !tauriTargets.has(target))) {
+      throw new Error("invalid Tauri desktop targets");
+    }
     if (!coreVersionAtLeastMinimum(plan.coreVersion)) throw new Error("unsupported Core version");
     if (!/^\d+\.\d+\.\d+$/.test(plan.uiVersion || "") || !/^\d+\.\d+\.\d+$/.test(plan.coreVersion || "") || !Number.isSafeInteger(plan.buildNumber) || plan.buildNumber < 1 || plan.applicationVersion !== `${plan.uiVersion}-build.${plan.buildNumber}`) throw new Error("invalid managed application version");
+  } else if (plan.desktopBranch) {
+    throw new Error("unexpected desktop branch");
   }
   return plan;
 }
@@ -47,6 +72,8 @@ export function validatePlan(plan, expectedTaskId) {
 export function matrices(plan) {
   const cached = new Set(plan.coreCachedTargets || []);
   const desktopCached = new Set(plan.desktopCachedTargets || []);
+  const desktopBranch = resolveDesktopBranch(plan);
+  const desktopRuntime = resolveDesktopRuntime(plan);
   const core = plan.targets.filter((target) => !cached.has(target)).map((target) => ({ target, ...targetDefinitions[target], os: targetDefinitions[target].coreOS }));
   const desktop = plan.targets.filter((target) => !desktopCached.has(target)).map((target) => ({ target, ...targetDefinitions[target], os: targetDefinitions[target].desktopOS }));
   const platforms = plan.targets.map((target) => ({
@@ -58,6 +85,8 @@ export function matrices(plan) {
     core: { include: core }, desktop: { include: desktop }, platforms: { include: platforms },
     coreNeeded: platforms.some(item => item.core_needed),
     desktopNeeded: platforms.some(item => item.desktop_needed),
+    desktopBranch,
+    desktopRuntime,
   };
 }
 

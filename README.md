@@ -1,6 +1,6 @@
 # mybuddyRunner
 
-`mybuddyRunner` 是 MyBuddy 的 GitHub Actions 控制仓库。MyBuddy 和 MyBuddy Core 源码，任务计划、Core 依赖和构建制品全部通过 `mybuddyUpdateServer` 传输；工作流不保存 GitLab、OSS 地址或对应凭据。
+`mybuddyRunner` 是 MyBuddy 的 GitHub Actions 控制仓库。MyBuddy 和 MyBuddy Core 源码、任务计划、Core 依赖和正式构建制品通过 `mybuddyUpdateServer` 传输。工作流不保存 GitLab、OSS 地址或对应凭据。
 
 Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装依赖，避免 Bun 的 `node_modules/.bun/...` 与 NSIS 模板路径超过传统 260 字符上限。该处理同时用于 Desktop 和 Core 源码。
 
@@ -10,9 +10,9 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 
 - `MYBUDDY_BUILD_SECRET`：在 Update Server 管理台创建。明文只在创建响应中显示一次，可设置到期时间或永不过期。
 - `MYBUDDY_UPDATE_SERVER_URL`：Update Server 的 HTTPS 域名根地址，例如 `https://mybuddy.mingya.com.cn`，不附加 `/releases`、`/admin` 或渠道路径。
-- `MYBUDDY_UPDATE_PUBLIC_KEYS`：Desktop 内置的 Ed25519 公钥 JSON，格式为 `{"key-id":"-----BEGIN PUBLIC KEY-----\\n..."}`。
+- `MYBUDDY_PILOT_UPDATE_PUBLIC_KEYS`：Desktop 内置的 Ed25519 公钥 JSON，格式为 `{"key-id":"-----BEGIN PUBLIC KEY-----\\n..."}`。
 
-五个 job 都显式绑定 `MYBUDDY` Environment。工作流不接受 dispatch 输入的服务器地址，避免构建密钥被发送到任意域名；公钥和按任务渠道生成的更新地址只注入 Desktop 打包步骤。
+构建 job 都显式绑定 `MYBUDDY` Environment。工作流不接受 dispatch 输入的服务器地址，避免构建密钥被发送到任意域名。公钥和按任务渠道生成的更新地址只注入 Desktop 打包步骤。
 
 手工触发 `.github/workflows/build.yml` 时只输入管理台创建的 `bt_...` 任务 ID。
 
@@ -21,6 +21,13 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 本 Runner 接受 schema 3 构建计划，要求 MyBuddyCore v0.2.2 或更新版本。部署时先升级 Update Server（生成新计划并移除退役源码配置），再切换 Runner；旧计划保持原摘要，不能交给新 Runner 重建。新建任务必须冻结包含本次改动的 Fork commit。Desktop 通过 `MYBUDDY_BACKEND_LOCAL_BUNDLE_DIR` 和 `MYBUDDY_BACKEND_VERSION` 接收任务绑定的 Core。
 
 支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`、`linux-x64`、`linux-arm64`。每个矩阵任务把制品直接上传到 Update Server 的任务暂存区。
+
+## Desktop 分支与运行时显式映射（Electron / Tauri）
+
+Update Server 在任务计划中显式指定 `desktopBranch`（默认 `"master"`）：
+
+- `desktopBranch = "master"`（默认）：使用 `desktop_runtime = "electron"`，支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`、`linux-x64`、`linux-arm64`。
+- `desktopBranch = "tauri"`：使用 `desktop_runtime = "tauri"`，支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`。Runner 在同一正式构建流水线（`build.yml` → `platform.yml`）中完成 Rust 1.95.0 编译、资源准备、macOS 签名/公证/stapler/DMG/ZIP/blockmap、`latest-mac.yml` 以及 Windows NSIS 安装包、静默安装自检、blockmap、`latest*.yml` 生成与 Update Server 上传。
 
 ## 构建执行与缓存
 

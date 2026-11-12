@@ -17,8 +17,12 @@ export function videoTarget(platform, arch, release = pinned) {
 
 export async function prefetchVideoTools(root, platform, arch, options = {}) {
   const release = options.release || pinned;
-  const hook = join(root, "scripts", "beforePack.js");
-  if (!existsSync(hook) || !readFileSync(hook, "utf8").includes("async function prepareVideoTools(")) {
+  const hookCandidates = [
+    join(root, "scripts", "beforePack.js"),
+    join(root, "packages", "release-tools", "src", "tauriReleaseHelpers.cjs"),
+  ];
+  const hook = hookCandidates.find((candidate) => existsSync(candidate) && readFileSync(candidate, "utf8").includes("async function prepareVideoTools("));
+  if (!hook) {
     console.log("Source has no bundled video encoder hook; nothing to prefetch");
     return null;
   }

@@ -71,3 +71,16 @@ test("pins cover all current targets without executing the wrong architecture", 
   }
   assert.throws(() => videoTarget("freebsd", "x64"), /Unsupported/);
 });
+
+test("supports Tauri source layout via tauriReleaseHelpers.cjs", async (t) => {
+  const f = fixture(t);
+  rmSync(join(f.root, "scripts"), { recursive: true, force: true });
+  mkdirSync(join(f.root, "packages", "release-tools", "src"), { recursive: true });
+  writeFileSync(
+    join(f.root, "packages", "release-tools", "src", "tauriReleaseHelpers.cjs"),
+    "async function prepareVideoTools() { const release = 'b6.1.1'; }",
+  );
+  const result = await prefetchVideoTools(f.root, "win32", "arm64", f);
+  assert.equal(result, f.destination);
+  assert.equal(readFileSync(join(result, "ffmpeg.exe"), "utf8"), "test encoder");
+});

@@ -75,3 +75,27 @@ test('completion requirements reflect the selected task mode and unfinished targ
   const cached = matrices({ mode: 'bundle', targets, coreCachedTargets: targets, desktopCachedTargets: targets });
   assert.deepEqual([cached.coreNeeded, cached.desktopNeeded], [false, false]);
 });
+
+test('explicitly maps desktopBranch to Electron (default master) or Tauri runtime', () => {
+  const defaultPlan = validatePlan(plan('bundle'), id);
+  assert.equal(matrices(defaultPlan).desktopBranch, 'master');
+  assert.equal(matrices(defaultPlan).desktopRuntime, 'electron');
+
+  const tauriPlan = validatePlan(plan('bundle', {
+    desktopBranch: 'tauri',
+    targets: ['darwin-arm64', 'darwin-x64', 'windows-x64', 'windows-arm64'],
+    sources: { core, desktop: { ...desktop, branch: 'tauri' } },
+  }), id);
+  assert.equal(matrices(tauriPlan).desktopBranch, 'tauri');
+  assert.equal(matrices(tauriPlan).desktopRuntime, 'tauri');
+
+  assert.throws(() => validatePlan(plan('bundle', { desktopBranch: 'dev' }), id), /invalid desktop branch/);
+  assert.throws(() => validatePlan(plan('bundle', {
+    desktopBranch: 'tauri',
+    sources: { core, desktop: { ...desktop, branch: 'master' } },
+  }), id), /invalid desktop branch/);
+  assert.throws(() => validatePlan(plan('bundle', {
+    desktopBranch: 'tauri',
+    targets: ['darwin-arm64', 'linux-x64'],
+  }), id), /invalid Tauri desktop targets/);
+});
