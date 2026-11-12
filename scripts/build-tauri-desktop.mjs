@@ -15,7 +15,7 @@ export function verifyInstalledWindowsPayload(installDir, arch) {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const nodePath = join(managedDir, manifest.node.root, manifest.node.executable);
   const required = [
-    join(installDir, "mybuddy-tauri.exe"),
+    join(installDir, "mybuddy.exe"),
     join(installDir, "host.mjs"),
     join(installDir, "static", "index.html"),
     join(installDir, "bundled-mybuddy-core", runtimeKey, "mybuddy-core.exe"),

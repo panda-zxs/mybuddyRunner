@@ -34,7 +34,7 @@ export function applyApplicationVersion(sourceDirectory, applicationVersion) {
   if (existsSync(tauriCargoLockPath)) {
     const cargoLock = readFileSync(tauriCargoLockPath, "utf8");
     const updatedLock = cargoLock.replace(
-      /(\[\[package\]\]\r?\nname = "mybuddy-tauri"\r?\nversion = )"[^"]+"/g,
+      /(\[\[package\]\]\r?\nname = "(?:mybuddy|mybuddy-tauri)"\r?\nversion = )"[^"]+"/g,
       `$1"${applicationVersion}"`,
     );
     writeFileSync(tauriCargoLockPath, updatedLock);

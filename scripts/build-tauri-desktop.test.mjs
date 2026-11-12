@@ -44,7 +44,7 @@ test("runs Windows Tauri release packaging and verifies installed payload", (t) 
         const managedDir = join(installDir, "bundled-mybuddy-core", "win32-x64", "managed-resources");
         mkdirSync(join(installDir, "static"), { recursive: true });
         mkdirSync(join(managedDir, "node"), { recursive: true });
-        writeFileSync(join(installDir, "mybuddy-tauri.exe"), "exe");
+        writeFileSync(join(installDir, "mybuddy.exe"), "exe");
         writeFileSync(join(installDir, "host.mjs"), "host");
         writeFileSync(join(installDir, "static", "index.html"), "html");
         writeFileSync(join(installDir, "bundled-mybuddy-core", "win32-x64", "mybuddy-core.exe"), "core");
