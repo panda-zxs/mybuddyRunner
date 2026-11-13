@@ -199,7 +199,7 @@ jobs:
       npm_config_cache: ${{ github.workspace }}/.build-cache/npm
       ELECTRON_CACHE: ${{ github.workspace }}/.build-cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.build-cache/electron-builder
-      DESKTOP_BUN_VERSION: ${{ matrix.target == 'windows-arm64' && '1.4.2' || '1.3.5' }}
+      DESKTOP_BUN_VERSION: '1.4.2'
     if: always() && !cancelled() && inputs.desktop_needed && (needs.core.result == 'success' || !inputs.core_needed)
     strategy:
       fail-fast: false

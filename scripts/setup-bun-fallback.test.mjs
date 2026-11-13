@@ -53,10 +53,10 @@ test("fallback installs exact official package without scripts and exports verif
 });
 
 test("Unix fallback provides bunx and selects the host rather than a cross-compile target", (t) => {
-  const f = fixture(t, { platform: "linux", arch: "x64", version: "1.3.5" });
+  const f = fixture(t, { platform: "linux", arch: "x64", version: "1.4.2" });
   const executable = f.invoke();
   assert.equal(f.calls[0].command, "npm");
-  assert.ok(f.calls[0].args.includes("@oven/bun-linux-x64@1.3.5"));
+  assert.ok(f.calls[0].args.includes("@oven/bun-linux-x64@1.4.2"));
   assert.ok(existsSync(join(dirname(executable), "bunx")));
 });
 
@@ -65,7 +65,7 @@ for (const [name, overrides] of [
   ["package substitution", { metadata: { name: "unexpected" } }],
   ["package version mismatch", { metadata: { version: "1.4.3" } }],
   ["emulated executable", { actual: { arch: "x64" } }],
-  ["wrong executable version", { actual: { version: "1.3.5" } }],
+  ["wrong executable version", { actual: { version: "1.4.0" } }],
 ]) {
   test(`${name} stops fallback without exporting a broken tool or leaving files`, (t) => {
     const f = fixture(t, overrides);
@@ -76,5 +76,5 @@ for (const [name, overrides] of [
 }
 
 test("the verification gate also rejects a wrong version from the primary installer", () => {
-  assert.throws(() => verifyBun("bun", "1.3.5", { platform: "darwin", arch: "arm64", run: () => JSON.stringify({ version: "1.4.2", platform: "darwin", arch: "arm64" }) }), /identity mismatch/);
+  assert.throws(() => verifyBun("bun", "1.4.2", { platform: "darwin", arch: "arm64", run: () => JSON.stringify({ version: "1.4.0", platform: "darwin", arch: "arm64" }) }), /identity mismatch/);
 });

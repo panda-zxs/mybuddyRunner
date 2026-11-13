@@ -11,7 +11,7 @@ import { prefetchElectronArchive } from "./prefetch-electron.mjs";
 const root = mkdtempSync(join(process.env.RUNNER_TEMP, "native-download-smoke-"));
 try {
   if (process.env.GITHUB_ACTIONS === "true" && !process.env.GITHUB_TOKEN) throw new Error("Native Actions verification requires the read-only GitHub token");
-  const version = process.platform === "win32" && process.arch === "arm64" ? "1.4.2" : "1.3.5";
+  const version = "1.4.2";
   const cleanEnv = { ...process.env };
   delete cleanEnv.GITHUB_TOKEN;
   delete cleanEnv.NODE_OPTIONS;

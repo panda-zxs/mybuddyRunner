@@ -43,7 +43,7 @@ Desktop 的最终安装包版本由已冻结任务计划写入：UI 版本来自
 - Desktop 整包缓存绑定任务、Desktop/Core 来源、打包规则、应用版本与更新配置摘要，且**仅在上传 Update Server 失败时才写入 Actions 缓存**，避免正常成功构建向 10GB 缓存池写入数 GB 一次性安装包而淘汰 Rust 编译缓存。命中后跳过 Bun 安装和重新打包。
 - Desktop 包下载（Bun/npm）与 Electron 工具下载分开缓存；按宿主系统、架构、目标和依赖版本隔离。仍执行 frozen-lockfile 安装，不缓存 node_modules。
 - 安装依赖后单独准备锁定版本的 Electron。官方 release 下载遇到暂时性错误时有限重试，再切换到带只读 GitHub Token 的官方 asset API；不再依赖单一 npm 镜像。沿用源码中的 `@electron/get` 校验官方 SHA-256，缓存写入 `ELECTRON_CACHE`。源码原有运行时校验确认版本、系统和架构后，字节码编译器与 electron-builder 共用同一份已校验的分发包；源码 tag、任务版本、签名和完整性保护不变。
-- Bun 优先从 GitHub 安装；失败后使用官方 npm `@oven/bun-*` 原生二进制包备用下载路径，Windows ARM64 固定 1.4.2，其他平台固定 1.3.5。备用安装按宿主架构选择，禁用安装脚本，由 npm 校验包完整性并限制重试和总耗时；通过版本与架构检查后才加入 PATH，同时提供 bun/bunx。任一路径安装后均再次检查实际执行版本；两条路径都失败则停止打包。该安装方式使用 Bun [官方支持的 npm 分发渠道](https://bun.sh/docs/installation)。
+- Bun 优先从 GitHub 安装；失败后使用官方 npm `@oven/bun-*` 原生二进制包备用下载路径，各平台固定 1.4.2。备用安装按宿主架构选择，禁用安装脚本，由 npm 校验包完整性并限制重试和总耗时；通过版本与架构检查后才加入 PATH，同时提供 bun/bunx。任一路径安装后均再次检查实际执行版本；两条路径都失败则停止打包。该安装方式使用 Bun [官方支持的 npm 分发渠道](https://bun.sh/docs/installation)。
 - Computer Use 在编译前按冻结源码中的版本、目标和 SHA-256 预下载；Release 地址暂时失败时切换官方 GitHub Release Asset API，摘要不符立即停止。校验后的原始归档单独跨任务缓存，并在后续编译或签名失败前保存；缓存命中仍校验摘要。只写入现有打包脚本识别的 `out/.computer-use-cache`，不改冻结源码或跳过组件校验。API 路径也失败时停止，绝不输出缺少组件的安装包。
 - GitHub API 下载仅在预下载步骤使用内置的只读 `github.token`，不传给客户端源码、CDN 或其他站点。显式处理重定向并刷新签名下载地址，CDN 403 可重新获取一次地址；API 权限错误立即停止，限流只在短等待预算内重试。失败日志包含域名、认证方式和限流计数，不包含令牌或签名 URL。
 - 视频编码器 FFmpeg 也在编译前准备并缓存。`scripts/video-tools-release.json` 固定官方 b6.1.1 的压缩包、解压后二进制、LICENSE 与 README 摘要；源码版本不匹配时停止。Windows ARM64 沿用源码规定的 x64 编码器。准备结果写入既有 `resources/video-tools/<platform>-<arch>` 格式，原打包钩子复核后无需联网。
