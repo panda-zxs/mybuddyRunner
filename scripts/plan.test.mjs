@@ -80,8 +80,8 @@ test('completion requirements reflect the selected task mode and unfinished targ
   assert.deepEqual([cached.coreNeeded, cached.desktopNeeded], [false, false]);
 });
 
-test('explicitly maps desktopBranch to Electron (default master) or Tauri runtime', () => {
-  const defaultPlan = validatePlan(plan('bundle'), id);
+test('keeps the legacy routing of schema 3 plans when they retry', () => {
+  const defaultPlan = validatePlan(plan('bundle', { channel: 'stable' }), id);
   assert.equal(matrices(defaultPlan).desktopBranch, 'master');
   assert.equal(matrices(defaultPlan).desktopRuntime, 'electron');
 
@@ -102,4 +102,51 @@ test('explicitly maps desktopBranch to Electron (default master) or Tauri runtim
     desktopBranch: 'tauri',
     targets: ['darwin-arm64', 'linux-x64'],
   }), id), /invalid Tauri desktop targets/);
+});
+
+test('routes schema 4 desktop and bundle plans using their frozen runtime', () => {
+  const desktopPlan = validatePlan(plan('desktop', {
+    schemaVersion: 4,
+    desktopBranch: 'master',
+    desktopRuntime: 'tauri',
+    sources: { desktop: { ...desktop, branch: 'master' } },
+  }), id);
+  assert.equal(matrices(desktopPlan).desktopBranch, 'master');
+  assert.equal(matrices(desktopPlan).desktopRuntime, 'tauri');
+
+  const electronPlan = validatePlan(plan('bundle', {
+    schemaVersion: 4,
+    desktopBranch: 'electron',
+    desktopRuntime: 'electron',
+    sources: { core: { ...core, branch: 'electron' }, desktop: { ...desktop, branch: 'electron' } },
+    targets: ['linux-x64'],
+  }), id);
+  assert.equal(matrices(electronPlan).desktopRuntime, 'electron');
+  assert.throws(() => validatePlan({ ...electronPlan, channel: 'stable' }, id), /internal channel/);
+});
+
+test('rejects schema 4 plans with missing or inconsistent Desktop provenance', () => {
+  const selected = plan('bundle', {
+    schemaVersion: 4,
+    desktopBranch: 'master',
+    desktopRuntime: 'tauri',
+    sources: { core: { ...core, branch: 'master' }, desktop: { ...desktop, branch: 'master' } },
+  });
+  assert.doesNotThrow(() => validatePlan(selected, id));
+  assert.throws(() => validatePlan({ ...selected, desktopBranch: undefined }, id), /invalid desktop branch/);
+  assert.throws(() => validatePlan({ ...selected, desktopBranch: 'tauri' }, id), /invalid desktop branch/);
+  assert.throws(() => validatePlan({ ...selected, desktopRuntime: undefined }, id), /invalid desktop runtime/);
+  assert.throws(() => validatePlan({ ...selected, desktopRuntime: 'electron' }, id), /invalid desktop runtime/);
+  assert.throws(() => validatePlan({ ...selected, sources: { core: selected.sources.core, desktop } }, id), /invalid desktop branch/);
+  assert.throws(() => validatePlan({ ...selected, sources: { ...selected.sources, core: { ...core, branch: 'electron' } } }, id), /invalid desktop branch/);
+  assert.throws(() => validatePlan({ ...selected, targets: ['linux-arm64'] }, id), /invalid Tauri desktop targets/);
+});
+
+test('keeps standalone Core targets independent of Desktop routing in schema 4', () => {
+  const corePlan = validatePlan(plan('core', { schemaVersion: 4, targets: ['linux-arm64'] }), id);
+  const result = matrices(corePlan);
+  assert.equal(result.desktopRuntime, '');
+  assert.equal(result.platforms.include[0].core_needed, true);
+  assert.equal(result.platforms.include[0].desktop_needed, false);
+  assert.throws(() => validatePlan({ ...corePlan, desktopRuntime: 'tauri' }, id), /unexpected desktop branch/);
 });

@@ -27,7 +27,13 @@ test("supports explicit desktop_runtime routing for Electron and Tauri in the un
   assert.ok(fetchPlan.includes("desktop_runtime=${result.desktopRuntime}"));
   assert.match(mainWorkflow, /desktop_runtime: \$\{\{ steps\.plan\.outputs\.desktop_runtime \}\}/);
   assert.match(mainWorkflow, /desktop_runtime: \$\{\{ needs\.prepare\.outputs\.desktop_runtime \}\}/);
-  assert.match(platformWorkflow, /desktop_runtime:\n\s+type: string\n\s+required: false\n\s+default: electron/);
+  const platform = load(platformWorkflow);
+  assert.deepEqual(platform.on.workflow_call.inputs.desktop_runtime, { type: "string", required: true });
+  const desktopSteps = platform.jobs.desktop.steps;
+  const verifySource = desktopSteps.findIndex(step => step.run === "node scripts/verify-desktop-source.mjs");
+  assert.ok(verifySource > desktopSteps.findIndex(step => step.name === "Extract source on Windows"));
+  assert.ok(verifySource < desktopSteps.findIndex(step => step.name === "Build Desktop"));
+  assert.equal(desktopSteps[verifySource].env.DESKTOP_RUNTIME, "${{ inputs.desktop_runtime }}");
   assert.match(platformWorkflow, /if: steps\.packaged\.outputs\.cache-hit != 'true' && inputs\.desktop_runtime == 'tauri'/);
   assert.match(platformWorkflow, /if: steps\.packaged\.outputs\.cache-hit != 'true' && inputs\.desktop_runtime != 'tauri'/);
   assert.match(platformWorkflow, /if \[ "\$\{\{ inputs\.desktop_runtime \}\}" = tauri \]; then\n\s+DESKTOP_CMD="node \$GITHUB_WORKSPACE\/scripts\/build-tauri-desktop\.mjs \$\{\{ matrix\.platform \}\} \$\{\{ matrix\.arch \}\}"/);

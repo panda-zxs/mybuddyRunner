@@ -25,8 +25,7 @@ on:
         required: true
       desktop_runtime:
         type: string
-        required: false
-        default: electron
+        required: true
       core_needed:
         type: boolean
         required: true
@@ -308,6 +307,11 @@ jobs:
           New-Item -ItemType Directory -Force src | Out-Null
           Get-ChildItem -Force $sourceDir.FullName | Move-Item -Destination src
           "SOURCE_DIR=$((Resolve-Path src).Path)" >> $env:GITHUB_ENV
+      - name: Verify frozen Desktop source matches the planned runtime
+        if: steps.packaged.outputs.cache-hit != 'true'
+        run: node scripts/verify-desktop-source.mjs
+        env:
+          DESKTOP_RUNTIME: ${{ inputs.desktop_runtime }}
       - name: Restore Computer Use release archive
         id: computer-use-cache
         if: steps.packaged.outputs.cache-hit != 'true' && hashFiles('**/scripts/computer-use/release.json') != ''
