@@ -56,6 +56,11 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-node@v6
         with: { node-version: 24 }
+      - name: Check task accepts uploads
+        timeout-minutes: 3
+        run: node scripts/task-state.mjs
+        env:
+          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Check already registered task-bound Core
         id: uploaded
         timeout-minutes: 3
@@ -213,6 +218,11 @@ jobs:
         with:
           node-version: 24
           architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - name: Check task accepts uploads
+        timeout-minutes: 3
+        run: node scripts/task-state.mjs
+        env:
+          MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
       - name: Verify native macOS Desktop runner
         if: runner.os == 'macOS'
         shell: bash

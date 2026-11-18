@@ -9,6 +9,18 @@ const mainWorkflow = readFileSync(new URL("../.github/workflows/build.yml", impo
 const platformWorkflow = readFileSync(new URL("../.github/workflows/platform.yml", import.meta.url), "utf8");
 const workflow = mainWorkflow + "\n" + platformWorkflow;
 
+test("each platform checks task state even when only a failed job is rerun", () => {
+  const parsed = load(platformWorkflow);
+  for (const job of [parsed.jobs.core, parsed.jobs.desktop]) {
+    const check = job.steps.findIndex(step => step.name === "Check task accepts uploads");
+    const firstCache = job.steps.findIndex(step => step.uses?.startsWith("actions/cache/restore@"));
+    assert.ok(check >= 0 && check < firstCache);
+    assert.equal(job.steps[check].run, "node scripts/task-state.mjs");
+    assert.equal(job.steps[check]["continue-on-error"], undefined);
+    assert.equal(job.steps[check].env.MYBUDDY_BUILD_SECRET, "${{ secrets.MYBUDDY_BUILD_SECRET }}");
+  }
+});
+
 test("supports explicit desktop_runtime routing for Electron and Tauri in the unified platform pipeline", () => {
   const fetchPlan = readFileSync(new URL("./fetch-plan.mjs", import.meta.url), "utf8");
   assert.ok(fetchPlan.includes("desktop_branch=${result.desktopBranch}"));
