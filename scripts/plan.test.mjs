@@ -105,40 +105,65 @@ test('keeps the legacy routing of schema 3 plans when they retry', () => {
 });
 
 test('routes schema 4 desktop and bundle plans using their frozen runtime', () => {
-  const desktopPlan = validatePlan(plan('desktop', {
+  const masterElectronPlan = validatePlan(plan('bundle', {
     schemaVersion: 4,
+    channel: 'stable',
+    desktopBranch: 'master',
+    desktopRuntime: 'electron',
+    sources: { core: { ...core, branch: 'master' }, desktop: { ...desktop, branch: 'master' } },
+    targets: ['darwin-arm64', 'linux-x64'],
+  }), id);
+  assert.equal(matrices(masterElectronPlan).desktopBranch, 'master');
+  assert.equal(matrices(masterElectronPlan).desktopRuntime, 'electron');
+
+  const tauriBranchPlan = validatePlan(plan('bundle', {
+    schemaVersion: 4,
+    channel: 'stable',
+    desktopBranch: 'tauri',
+    desktopRuntime: 'tauri',
+    sources: { core: { ...core, branch: 'tauri' }, desktop: { ...desktop, branch: 'tauri' } },
+  }), id);
+  assert.equal(matrices(tauriBranchPlan).desktopBranch, 'tauri');
+  assert.equal(matrices(tauriBranchPlan).desktopRuntime, 'tauri');
+
+  // Historical schema 4 plans created during the Tauri-on-master window still retry safely.
+  const historicalMasterTauri = validatePlan(plan('desktop', {
+    schemaVersion: 4,
+    channel: 'stable',
     desktopBranch: 'master',
     desktopRuntime: 'tauri',
     sources: { desktop: { ...desktop, branch: 'master' } },
   }), id);
-  assert.equal(matrices(desktopPlan).desktopBranch, 'master');
-  assert.equal(matrices(desktopPlan).desktopRuntime, 'tauri');
+  assert.equal(matrices(historicalMasterTauri).desktopBranch, 'master');
+  assert.equal(matrices(historicalMasterTauri).desktopRuntime, 'tauri');
 
-  const electronPlan = validatePlan(plan('bundle', {
+  const historicalElectronBranch = validatePlan(plan('bundle', {
     schemaVersion: 4,
+    channel: 'internal',
     desktopBranch: 'electron',
     desktopRuntime: 'electron',
     sources: { core: { ...core, branch: 'electron' }, desktop: { ...desktop, branch: 'electron' } },
     targets: ['linux-x64'],
   }), id);
-  assert.equal(matrices(electronPlan).desktopRuntime, 'electron');
-  assert.throws(() => validatePlan({ ...electronPlan, channel: 'stable' }, id), /internal channel/);
+  assert.equal(matrices(historicalElectronBranch).desktopBranch, 'electron');
+  assert.equal(matrices(historicalElectronBranch).desktopRuntime, 'electron');
 });
 
 test('rejects schema 4 plans with missing or inconsistent Desktop provenance', () => {
   const selected = plan('bundle', {
     schemaVersion: 4,
-    desktopBranch: 'master',
+    channel: 'stable',
+    desktopBranch: 'tauri',
     desktopRuntime: 'tauri',
-    sources: { core: { ...core, branch: 'master' }, desktop: { ...desktop, branch: 'master' } },
+    sources: { core: { ...core, branch: 'tauri' }, desktop: { ...desktop, branch: 'tauri' } },
   });
   assert.doesNotThrow(() => validatePlan(selected, id));
   assert.throws(() => validatePlan({ ...selected, desktopBranch: undefined }, id), /invalid desktop branch/);
-  assert.throws(() => validatePlan({ ...selected, desktopBranch: 'tauri' }, id), /invalid desktop branch/);
+  assert.throws(() => validatePlan({ ...selected, desktopBranch: 'dev' }, id), /invalid desktop branch/);
   assert.throws(() => validatePlan({ ...selected, desktopRuntime: undefined }, id), /invalid desktop runtime/);
-  assert.throws(() => validatePlan({ ...selected, desktopRuntime: 'electron' }, id), /invalid desktop runtime/);
+  assert.throws(() => validatePlan({ ...selected, desktopRuntime: 'native' }, id), /invalid desktop runtime/);
   assert.throws(() => validatePlan({ ...selected, sources: { core: selected.sources.core, desktop } }, id), /invalid desktop branch/);
-  assert.throws(() => validatePlan({ ...selected, sources: { ...selected.sources, core: { ...core, branch: 'electron' } } }, id), /invalid desktop branch/);
+  assert.throws(() => validatePlan({ ...selected, sources: { ...selected.sources, core: { ...core, branch: 'master' } } }, id), /invalid desktop branch/);
   assert.throws(() => validatePlan({ ...selected, targets: ['linux-arm64'] }, id), /invalid Tauri desktop targets/);
 });
 

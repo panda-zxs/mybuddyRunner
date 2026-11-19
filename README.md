@@ -24,12 +24,12 @@ Windows 会把 GitLab ZIP 的单层根目录内容移动到短路径后再安装
 
 ## Desktop 分支与运行时显式映射（Electron / Tauri）
 
-新版构建计划（schema 4）固定 Desktop 的 `desktopBranch` 和 `desktopRuntime`。组合任务的 Core 源码分支须与 Desktop 一致：
+新版构建计划（schema 4）固定 Desktop 的 `desktopBranch` 和 `desktopRuntime`，并在打包前校验冻结源码是否包含对应运行时的打包配置。组合任务的 Core 源码分支须与 Desktop 一致：
 
-- `master` 使用 `tauri`，支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`。Runner 在 `build.yml` → `platform.yml` 中完成 Rust 编译、资源准备、macOS 签名和公证、Windows NSIS 安装自检，以及更新制品生成与上传。
-- `electron` 使用 `electron`，维护构建进入 `internal`，目标还包括 `linux-x64` 和 `linux-arm64`。
+- `master` 使用 `electron`，支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`、`linux-x64`、`linux-arm64`。
+- `tauri` 使用 `tauri`，支持 `darwin-arm64`、`darwin-x64`、`windows-x64`、`windows-arm64`。Runner 在 `build.yml` → `platform.yml` 中完成 Rust 编译、资源准备、macOS 签名和公证、Windows NSIS 安装自检，以及更新制品生成与上传。
 
-重试旧 schema 3 计划沿用原映射，`master` 或缺省为 Electron，`tauri` 为 Tauri。仅构建 Core 的任务无需 Desktop 分支或运行时，仍支持所有 Core 目标。
+重试历史 schema 4（含切换窗口期的 `master`/Tauri 或 `electron`/Electron 计划）与旧 schema 3 计划均沿用各自冻结的运行时。仅构建 Core 的任务无需 Desktop 分支或运行时，仍支持所有 Core 目标。
 
 ## 构建执行与缓存
 

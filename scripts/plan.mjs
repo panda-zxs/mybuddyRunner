@@ -11,18 +11,18 @@ const targetDefinitions = {
 
 const minimumCoreVersion = [0, 2, 2];
 const tauriTargets = new Set(["darwin-arm64", "darwin-x64", "windows-x64", "windows-arm64"]);
-const desktopRuntimeByBranch = new Map([["master", "tauri"], ["electron", "electron"]]);
+const schema4DesktopBranches = new Set(["master", "tauri", "electron"]);
+const desktopRuntimes = new Set(["electron", "tauri"]);
 
 function resolveDesktopSelection(plan) {
   if (plan.mode === "core") return { desktopBranch: "", desktopRuntime: "" };
   const explicit = plan.desktopBranch;
   const sourceBranch = plan.sources?.desktop?.branch;
   if (plan.schemaVersion === 4) {
-    const expectedRuntime = desktopRuntimeByBranch.get(explicit);
-    if (!expectedRuntime || explicit !== sourceBranch || (plan.mode === "bundle" && explicit !== plan.sources?.core?.branch)) {
+    if (!schema4DesktopBranches.has(explicit) || explicit !== sourceBranch || (plan.mode === "bundle" && explicit !== plan.sources?.core?.branch)) {
       throw new Error("invalid desktop branch");
     }
-    if (plan.desktopRuntime !== expectedRuntime) throw new Error("invalid desktop runtime");
+    if (!desktopRuntimes.has(plan.desktopRuntime)) throw new Error("invalid desktop runtime");
     return { desktopBranch: explicit, desktopRuntime: plan.desktopRuntime };
   }
 
@@ -64,9 +64,6 @@ export function validatePlan(plan, expectedTaskId) {
   if (plan.mode !== "desktop" && plan.coreReleaseId) throw new Error("unexpected Core candidate");
   if (plan.mode !== "core") {
     const { desktopRuntime } = resolveDesktopSelection(plan);
-    if (plan.schemaVersion === 4 && desktopRuntime === "electron" && plan.channel !== "internal") {
-      throw new Error("Electron maintenance builds require the internal channel");
-    }
     if (desktopRuntime === "tauri" && plan.targets.some((target) => !tauriTargets.has(target))) {
       throw new Error("invalid Tauri desktop targets");
     }
