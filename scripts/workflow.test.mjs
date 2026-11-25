@@ -26,6 +26,8 @@ test("supports explicit desktop_runtime routing for Electron and Tauri in the un
   assert.ok(fetchPlan.includes("desktop_branch=${result.desktopBranch}"));
   assert.ok(fetchPlan.includes("desktop_runtime=${result.desktopRuntime}"));
   assert.match(mainWorkflow, /desktop_runtime: \$\{\{ steps\.plan\.outputs\.desktop_runtime \}\}/);
+  assert.match(mainWorkflow, /run-name: MyBuddy managed build \(\$\{\{ inputs\.task_id \}\}\)/);
+  assert.match(mainWorkflow, /TASK_ATTEMPT: \$\{\{ needs\.prepare\.outputs\.task_attempt \}\}/);
   assert.match(mainWorkflow, /desktop_runtime: \$\{\{ needs\.prepare\.outputs\.desktop_runtime \}\}/);
   const platform = load(platformWorkflow);
   assert.deepEqual(platform.on.workflow_call.inputs.desktop_runtime, { type: "string", required: true });

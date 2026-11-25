@@ -33,8 +33,9 @@ test("waits for delayed release registration and sends the exact authenticated r
   assert.deepEqual(JSON.parse(mock.calls[0].body), { succeeded: true, reason: "" });
 
   const failedWithVerifiedCore = responder(200);
-  await completeTask({ ...config, succeeded: false, coreVerified: true, reason: "desktop failed", request: failedWithVerifiedCore.request });
+  await completeTask({ ...config, succeeded: false, coreVerified: true, reason: "desktop failed", attempt: "3", request: failedWithVerifiedCore.request });
   assert.equal(failedWithVerifiedCore.calls[0].options.headers["X-MyBuddy-Core-Verified"], "true");
+  assert.equal(failedWithVerifiedCore.calls[0].options.headers["X-MyBuddy-Task-Attempt"], "3");
   assert.deepEqual(JSON.parse(failedWithVerifiedCore.calls[0].body), { succeeded: false, reason: "desktop failed" });
 });
 

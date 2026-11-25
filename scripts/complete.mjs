@@ -5,7 +5,7 @@ export const COMPLETION_TIMEOUT_MS = 60 * 60 * 1000;
 
 // Release registration still verifies the archived installers before
 // responding. Native HTTPS avoids fetch's independent five-minute header limit.
-export function completeTask({ base, taskId, secret, succeeded, coreVerified = false, reason = "", timeoutMs = COMPLETION_TIMEOUT_MS, request = httpsRequest }) {
+export function completeTask({ base, taskId, secret, succeeded, coreVerified = false, reason = "", attempt = "", timeoutMs = COMPLETION_TIMEOUT_MS, request = httpsRequest }) {
   const url = new URL(`/releases/ci/v1/tasks/${taskId}/complete`, base);
   if (url.protocol !== "https:" || !/^bt_[a-f0-9]{24}$/.test(taskId) || !secret || typeof succeeded !== "boolean" || typeof coreVerified !== "boolean") throw new Error("invalid completion configuration");
   const body = JSON.stringify({ succeeded, reason: succeeded ? "" : reason.slice(0, 1000) });
@@ -14,6 +14,7 @@ export function completeTask({ base, taskId, secret, succeeded, coreVerified = f
     "Content-Type": "application/json",
     "Content-Length": Buffer.byteLength(body),
     ...(coreVerified ? { "X-MyBuddy-Core-Verified": "true" } : {}),
+    ...(attempt ? { "X-MyBuddy-Task-Attempt": String(attempt) } : {}),
   };
   return new Promise((resolve, reject) => {
     let timer;
@@ -43,6 +44,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     succeeded: process.argv[2] === "true",
     reason: process.argv[3] || "GitHub Actions build failed",
     coreVerified: process.argv[4] === "true",
+    attempt: process.env.TASK_ATTEMPT || "",
   });
   console.log("Update Server confirmed task completion");
 }

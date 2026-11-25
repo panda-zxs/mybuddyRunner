@@ -1,4 +1,5 @@
 name: MyBuddy managed build
+run-name: MyBuddy managed build (${{ inputs.task_id }})
 
 on:
   workflow_dispatch:
@@ -38,6 +39,7 @@ jobs:
       core_needed: ${{ steps.plan.outputs.core_needed }}
       desktop_needed: ${{ steps.plan.outputs.desktop_needed }}
       platform_matrix: ${{ steps.plan.outputs.platform_matrix }}
+      task_attempt: ${{ steps.plan.outputs.task_attempt }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
@@ -191,3 +193,4 @@ jobs:
           node scripts/complete.mjs "$SUCCESS" "verify=$VERIFY core=$CORE desktop=$DESKTOP" "$CORE_VERIFIED"
         env:
           MYBUDDY_BUILD_SECRET: ${{ secrets.MYBUDDY_BUILD_SECRET }}
+          TASK_ATTEMPT: ${{ needs.prepare.outputs.task_attempt }}
