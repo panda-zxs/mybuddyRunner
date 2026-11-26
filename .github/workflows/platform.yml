@@ -268,7 +268,7 @@ jobs:
         if: steps.packaged.outputs.cache-hit != 'true'
         run: node scripts/setup-bun-fallback.mjs verify
       - uses: actions/setup-go@v6
-        if: runner.os == 'macOS' && steps.packaged.outputs.cache-hit != 'true'
+        if: (runner.os == 'macOS' || runner.os == 'Windows') && steps.packaged.outputs.cache-hit != 'true'
         with:
           go-version: '1.24'
           cache: false
@@ -586,8 +586,8 @@ jobs:
           mkdir desktop-dist
           find "$SOURCE_DIR/out" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.msi' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.yml' -o -name '*.blockmap' \) -exec cp {} desktop-dist/ \;
           test -n "$(find desktop-dist -type f -maxdepth 1 -print -quit)"
-      - name: Generate external Linux blockmaps
-        if: runner.os == 'Linux' && steps.packaged.outputs.cache-hit != 'true'
+      - name: Generate external blockmaps
+        if: (runner.os == 'Linux' || runner.os == 'Windows') && steps.packaged.outputs.cache-hit != 'true'
         shell: bash
         run: node scripts/prepare-blockmaps.mjs "$SOURCE_DIR" desktop-dist
       # electron-builder 的调试/构建元数据不是分发产物；缓存命中的旧 desktop-dist 也要过滤。

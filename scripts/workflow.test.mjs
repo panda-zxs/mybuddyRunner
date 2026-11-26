@@ -272,3 +272,16 @@ test("prepares one verified Electron VM after dependency installation and before
   assert.doesNotMatch(build, /GITHUB_TOKEN:/);
   assert.doesNotMatch(build, /ELECTRON_MIRROR:.*npmmirror/);
 });
+
+test("installs Go on Windows and generates Windows zip blockmaps", () => {
+  assert.match(
+    platformWorkflow,
+    /actions\/setup-go@v6\n\s+if: \(runner\.os == 'macOS' \|\| runner\.os == 'Windows'\)/
+  );
+  assert.match(
+    platformWorkflow,
+    /Generate external blockmaps\n\s+if: \(runner\.os == 'Linux' \|\| runner\.os == 'Windows'\)/
+  );
+  const blockmapScript = readFileSync(new URL("./prepare-blockmaps.mjs", import.meta.url), "utf8");
+  assert.match(blockmapScript, /-win-\(\?:x64\|arm64\)\\\.zip\$/);
+});
